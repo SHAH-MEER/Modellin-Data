@@ -1,0 +1,834 @@
+---
+title: "Exploratory Data Analysis of Diabetes Health Indicators"
+subtitle: "MA7442 Modelling Data — Assessment 1 (Task 1)"
+author: "Shahmeer Shahzad"
+date: "12 February 2026 "
+format:
+  pdf:
+    geometry:
+      - top=2cm
+      - bottom=2cm
+      - left=1.5cm
+      - right=1.5cm
+    documentclass: article
+    df-print: kable
+---
+
+```{r}
+#| label: Loading_Packages_and_workbook_Customization
+#| message: false
+#| warning: false
+#| include: false
+library(tidyverse)
+library(skimr)
+library(scales)
+library(viridis)
+library(patchwork)
+library(rcompanion)
+
+# Plot format and dimension
+knitr::opts_chunk$set(dev = "cairo_pdf")
+knitr::opts_chunk$set(fig.width=14, fig.height=7) 
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE
+)
+
+# Set global ggplot theme
+theme_set(
+  theme_classic(base_size = 16) +
+    theme(
+      plot.title = element_text(size = 20, face = "bold"),
+      axis.title = element_text(size = 18),
+      axis.text  = element_text(size = 14),
+      legend.title = element_text(size = 13),
+      legend.text  = element_text(size = 12),
+      strip.text = element_text(face = "bold",size=14),
+      legend.background = element_rect(colour = "black",
+                                       fill = "white",
+                                       linewidth = 0.5)
+    )
+)
+```
+
+## 1. Introduction & Dataset Overview
+
+This project analyses a dataset of diabetes-related health indicators provided via Blackboard for the MA7442 *Modelling Data* module. The dataset comprises individual-level records from an extensive cross-sectional health survey, with variables capturing self-reported health status, lifestyle behaviours, clinical risk factors, healthcare access, and basic sociodemographic information. A key feature of the data is a categorical outcome variable indicating diabetes status, with values indicating no diabetes, prediabetes, or diabetes.
+
+The primary aim of Task 1 is to develop a clear understanding of this dataset through exploratory data analysis (EDA) and to use the resulting insights to formulate a set of focused, real-world research questions with associated aims and objectives. These questions will form the basis for more detailed modelling and evaluation in Task 2. All analyses are conducted in R, using a reproducible workflow and graphical summaries to make the patterns in the data transparent.
+
+### 1.1 Dataset Variables and Descriptions
+
+The dataset includes the following main groups of variables:
+
+**Outcome variable**\
+Diabetes status is recorded as a three-level categorical variable indicating no diabetes, prediabetes, or diabetes and serves as the primary outcome of interest.
+
+**Clinical risk factors**\
+Variables such as high blood pressure, high cholesterol, and body mass index (BMI) capture key clinical risk factors associated with diabetes.
+
+**Lifestyle behaviours**\
+Indicators for smoking, alcohol consumption, physical activity, and diet represent modifiable behaviours relevant to diabetes risk and prevention.
+
+**Self-reported health and health burden**\
+Measures of general health and days of poor physical and mental health provide insight into perceived health status and health burden.
+
+**Healthcare access**\
+Healthcare coverage and cost-related barriers to seeking care are included to assess potential inequalities in access to care.
+
+**Socio-demographic characteristics**\
+Age group, sex, education level, and income allow exploration of variation in diabetes prevalence across population subgroups.
+
+The dataset is sufficiently large to support robust exploratory analysis and subsequent modelling. However, because the data are self-reported and cross-sectional, all results should be interpreted as associations rather than causal effects, and potential reporting bias and unmeasured confounding should be considered when drawing conclusions.
+
+### 1.2 Objectives of the Exploratory Data Analysis
+
+The key objectives of this exploratory data analysis are:
+
+-   To understand the distribution of diabetes status and key health, lifestyle, and socio-demographic variables within the dataset.
+
+-   To explore relationships between diabetes status and potential risk factors, including clinical indicators, behaviours, and self-reported health measures.
+
+-   To identify patterns, dependencies, and data characteristics that will inform the formulation of research questions and the selection of appropriate modelling approaches in subsequent analysis.
+
+## 2. Data Understanding & Preparation
+
+This section focuses on understanding the structure and quality of the dataset prior to conducting exploratory analysis. Before examining distributions or relationships between variables, it is important to confirm that the data have been imported correctly, that variable types are appropriate, and that there are no immediate data quality issues that could affect subsequent analysis.
+
+The steps in this section, therefore, include loading the dataset, inspecting its basic structure, and performing initial checks on variable types, ranges, and missing values. These checks ensure that the exploratory analysis in Section 3 is based on a reliable and well-understood dataset.
+
+### 2.1 Data Import and Initial Inspection
+
+```{r}
+#| label: Importing_Data
+#| message: false
+#| warning: false
+
+# Import dataset from CSV
+diab <- read_csv("dataset_1.csv")
+
+# Inspect structure
+glimpse(diab)
+
+# Summary of basic distributions and missingness
+skim(diab) 
+```
+
+The `skim()` output confirms that **no missing values are present** in any of the 22 variables (n_missing = 0 across all columns), ensuring complete case analysis without the need for imputation or deletion.
+
+### 2.2 Recoding and Data Type Assignment
+
+#### 2.2.1 Recoding Target Variable
+
+The primary outcome variable, `Diabetes_012`, is originally stored as a numeric code taking values 0, 1, and 2. To reflect its categorical nature, this variable is recoded as a factor with descriptive labels corresponding to “No diabetes”, “Prediabetes”, and “Diabetes”. This recoding ensures that subsequent summaries and visualisations treat the outcome as a categorical variable rather than a numeric quantity, thereby simplifying the interpretation of tables and plots in later sections.
+
+```{r}
+#| label: Recode_Target
+
+diab <- diab |> 
+  mutate(Diabetes = factor(
+      Diabetes_012,
+      levels = c(0, 1, 2),
+      labels = c("No diabetes", "Prediabetes", "Diabetes"))) |> 
+  select(-Diabetes_012)
+```
+
+#### 2.2.2 Recoding binary indicators
+
+A large subset of the predictors are coded as binary indicators using 0/1 values (for example, high blood pressure, high cholesterol, smoking status, physical activity, and various healthcare access measures). These variables are recoded as two-level factors with labels “No” and “Yes”. This makes the underlying meaning of the codes explicit and ensures that downstream summaries, plots, and models treat these variables as categorical indicators rather than numeric quantities. It also improves the readability of tables and figures by replacing numeric codes with descriptive category names.
+
+```{r}
+#| label: Recoding_Bindary_Indicators
+diab <- diab |>
+  mutate(
+    across(
+      c(CholCheck, Smoker, Stroke, HeartDiseaseorAttack, PhysActivity, Fruits,
+        Veggies, HvyAlcoholConsump, AnyHealthcare, NoDocbcCost, DiffWalk),
+      function(x) factor(x, levels = c(0, 1), labels = c("No", "Yes"))),
+    
+    across(
+      c(HighBP, HighChol),
+      function(x) factor(x, levels = c(0, 1), labels = c("Not High", "High"))),
+    
+    Sex = factor(Sex, levels = c(0, 1), labels = c("Female", "Male")))
+
+
+# Quick check for a few variables
+count(diab, HighBP)
+count(diab, Sex)
+```
+
+#### 2.2.3 Recoding ordinal variables
+
+Variables representing ordered categories, namely self-rated general health, age group, education level, and household income, are recoded as ordered factors with descriptive labels. This preserves the natural ranking of categories while improving the interpretability of tables and visualisations during exploratory analysis. Explicit labels are handy for age, education, and income, as these variables are frequently used in stratified plots and comparisons across population subgroups.
+
+```{r}
+#| label: Recoding_Ordinal_Variables
+diab <- diab |>
+  mutate(
+    GenHlth = factor(GenHlth,levels = 1:5,
+      labels = c("Excellent", "Very good", "Good", "Fair", "Poor"),
+      ordered = TRUE),
+    
+    Age = factor(Age,levels = 1:13,
+      labels = c(
+                "18–24", "25–29", "30–34", "35–39", "40–44",
+                "45–49", "50–54", "55–59", "60–64", "65–69",
+                "70–74", "75–79", "80+"),
+      ordered = TRUE),
+    
+    Education = factor(Education,levels = 1:6,
+                       labels = c(
+                                  "Kindergarten or less",
+                                  "Grades 1–8",
+                                  "Grades 9–11",
+                                  "High school graduate",
+                                  "Some college / technical",
+                                  "College graduate"),
+                      ordered = TRUE),
+    
+    Income = factor(Income,levels = 1:8,
+                    labels = c(
+                              "< $10k",
+                              "$10k–$14k",
+                              "$15k–$19k",
+                              "$20k–$24k",
+                              "$25k–$34k",
+                              "$35k–$49k",
+                              "$50k–$74k",
+                              "$75k+"),
+                    ordered = TRUE ))
+
+# Sanity Check
+levels(diab$Age)
+levels(diab$Education)
+levels(diab$Income)
+```
+
+### 2.3 Variable Recoding Summary
+
+The following table summarizes all recoding transformations applied to the dataset:
+
+```{r}
+#| label: tbl-codebook
+#| echo: false
+#| tbl-cap: Summary of variable recoding transformations
+
+tribble(
+  ~Variable, ~Type, ~Original_Values, ~Recoded_Values,
+  "Diabetes_012", "Factor (3-level)", "0, 1, 2", "No diabetes, Prediabetes, Diabetes",
+  "HighBP", "Factor (binary)", "0, 1", "No, Yes",
+  "HighChol", "Factor (binary)", "0, 1", "No, Yes",
+  "CholCheck", "Factor (binary)", "0, 1", "No, Yes",
+  "Smoker", "Factor (binary)", "0, 1", "No, Yes",
+  "Stroke", "Factor (binary)", "0, 1", "No, Yes",
+  "HeartDiseaseorAttack", "Factor (binary)", "0, 1", "No, Yes",
+  "PhysActivity", "Factor (binary)", "0, 1", "No, Yes",
+  "Fruits", "Factor (binary)", "0, 1", "No, Yes",
+  "Veggies", "Factor (binary)", "0, 1", "No, Yes",
+  "HvyAlcoholConsump", "Factor (binary)", "0, 1", "No, Yes",
+  "AnyHealthcare", "Factor (binary)", "0, 1", "No, Yes",
+  "NoDocbcCost", "Factor (binary)", "0, 1", "No, Yes",
+  "DiffWalk", "Factor (binary)", "0, 1", "No, Yes",
+  "Sex", "Factor (binary)", "0, 1", "Female, Male",
+  "Age", "Ordered factor", "1–13", "18–24 to 80+",
+  "Education", "Ordered factor", "1–6", "None to College graduate",
+  "Income", "Ordered factor", "1–8", "<$10k to $75k+",
+  "GenHlth", "Ordered factor", "1–5", "Excellent to Poor",
+  "MentHlth", "Numeric", "0–30", "Days (continuous)",
+  "PhysHlth", "Numeric", "0–30", "Days (continuous)",
+  "BMI", "Numeric", "Continuous", "kg/m² (continuous)"
+)
+```
+
+## 3. Exploratory Data Analysis
+
+This section explores how diabetes status is distributed across key demographic, clinical, lifestyle, and self-reported health variables using descriptive visualisations. The analysis compares diabetes categories across age, sex, socioeconomic indicators, body mass index, cardiometabolic risk factors, physical activity, and measures of mental and physical health.
+
+The purpose of this exploratory analysis is to examine patterns of co-variation between diabetes status and these indicators, identify prominent gradients or clustering of risk factors, and assess which variables warrant further investigation in subsequent modelling-focused analysis. No causal or predictive modelling is undertaken at this stage.
+
+### 3.1 Outcome Distribution
+
+```{r}
+#| label: Outcome_Distribution
+diab |>
+  count(Diabetes) |>
+  ggplot(aes(x = Diabetes, y = n, fill = Diabetes)) +
+  geom_col() +
+  geom_text(aes(label = percent(n / sum(n), accuracy = 0.1)),
+            vjust = -0.3) +
+  labs(
+    title = "Distribution of diabetes status",
+    x = "Diabetes status",
+    y = "Count"
+  ) +
+  theme(legend.position = "none")
+
+```
+
+> The outcome distribution is highly imbalanced, with the majority of respondents reporting no diabetes (84.2%), a smaller proportion reporting diabetes (13.9%), and very few reporting prediabetes (1.8%). This pronounced asymmetry reflects the underlying population prevalence captured in the survey but also introduces analytical considerations. The small prediabetes category may limit stable estimation and suggests potential under-detection or reporting heterogeneity. For modelling, this imbalance necessitates careful treatment of minority classes through appropriate sampling strategies, weighting, or performance metrics that account for class prevalence, to avoid biased prediction or distorted importance of majority-class patterns.
+
+### 3.2 Demographics × Diabetes status
+
+#### 3.2.1 Age–Sex distribution by Diabetes Status
+
+```{r}
+#| label: Age_Sex_Pyramid
+
+# Summarise counts by age group and sex
+pyramid_data <- diab |>
+  count(Diabetes, Age, Sex) |>
+  group_by(Diabetes, Sex) |>
+  mutate(
+    percent = 100 * n / sum(n)
+  ) |>
+  ungroup() |>
+  mutate(
+    percent_signed = case_when(
+      Sex == "Male" ~ -percent,
+      Sex == "Female" ~ percent,
+      TRUE ~ NA_real_)
+  )
+ggplot(pyramid_data,
+       aes(x = Age, y = percent_signed, fill = Sex)) +
+  geom_col(width = 0.9, colour = "white") +
+  coord_flip() +
+  facet_wrap(~ Diabetes, nrow = 1) +
+  scale_y_continuous(
+    labels = function(x) paste0(abs(x), "%")
+  ) +
+  scale_fill_manual(
+    values = c("Female" = "orange",
+               "Male"   = "darkgreen")
+  ) +
+  labs(
+    title = "Age–sex distribution by diabetes status",
+    x = "Age group",
+    y = "Percent within diabetes group",
+    fill = "Sex"
+  ) 
+  
+
+
+```
+
+> The age–sex pyramids reveal a clear shift in age structure across diabetes categories. Individuals without diabetes are distributed across a broad age range. In contrast, both prediabetes and diabetes groups are strongly concentrated in older age bands, particularly from **60 years onwards**, with very few cases below age 40. This progressive skew towards older ages indicates a strong association between advancing age and diabetes status.
+
+#### 3.2.2 General Health x Sex diverging bar plot
+
+```{r}
+#| label: GenHlth_Diverging_pyramid
+
+genlik_data <- diab |>
+  count(Diabetes, Sex, GenHlth, name = "n") |>
+  group_by(Diabetes) |>
+  mutate(
+    percent = 100 * n / sum(n),
+    percent_signed = case_when(
+      Sex == "Male" ~ -percent,
+      Sex == "Female" ~ percent,
+      TRUE ~ NA_real_)) |>
+  ungroup()
+ggplot(genlik_data,
+       aes(x = GenHlth, y = percent_signed, fill = Sex)) +
+  geom_col(width = 0.9, colour = "white") +
+  coord_flip() +
+  facet_wrap(~ Diabetes, nrow = 1) +
+  scale_y_continuous(
+    breaks = seq(-40, 40, by = 10),
+    labels = function(x) paste0(abs(x), "%")
+  ) +
+  scale_fill_manual(values = c(
+                                "Female" = "orange",
+                                "Male"   = "darkgreen")
+  ) +
+  labs(
+    title = "Self-reported general health by diabetes status and sex",
+    x = "General Health",
+    y = "Percent within diabetes group",
+    fill  = "Sex") 
+
+```
+
+> Across diabetes categories, self-reported general health shifts progressively towards poorer categories. In the non-diabetic group, responses are concentrated in “Good” and “Very good,” with a noticeable share reporting “Excellent.” In contrast, both prediabetes and diabetes groups show a higher proportion of “Fair” and “Poor” responses, and “Excellent” health becomes increasingly uncommon, particularly in the diabetes panel.
+>
+> The distributions for men and women within each category are broadly similar, suggesting that diabetes status differentiates perceived health more clearly than sex in this dataset. Overall, the pattern indicates a graded deterioration in perceived general health across the glycaemic spectrum.
+
+#### 3.2.3 Education-Income by Diabetes Status
+
+```{r}
+#| include: false
+inc_long <- diab |>
+  count(Diabetes, Income, name = "n") |>
+  group_by(Diabetes) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup()
+
+gg_inc <- ggplot(inc_long,
+       aes(x = Diabetes, y = prop, fill = Income)) +
+  geom_col(position = "fill") +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+  labs(
+    title = "Income",
+    x = "Diabetes status",
+    y = "Proportion within diabetes group",
+    fill  = NULL
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 20, hjust = 1)
+  )
+```
+
+```{r}
+#| include: false
+edu_long <- diab |>
+  count(Diabetes, Education, name = "n") |>
+  group_by(Diabetes) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup()
+
+gg_edu <- ggplot(edu_long,
+       aes(x = Diabetes, y = prop, fill = Education)) +
+  geom_col() +
+  scale_y_continuous(
+    labels = percent_format(accuracy=1)) +
+  labs(
+    title = "Education",
+    x = "Diabetes status",
+    y = "Proportion within diabetes group",
+    fill = NULL) +
+  theme(
+    axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+```{r}
+#| fig-height: 9
+
+# Long code hidden in the final output
+(gg_edu | gg_inc) +
+  plot_annotation(
+    title = "Socio-economic distributions by diabetes status") + 
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+> The stacked bar charts indicate clear socio-economic gradients across diabetes categories. In the education panel, individuals without diabetes are more heavily represented in higher attainment groups, particularly college graduates, whereas the diabetes group shows a greater proportion in lower and intermediate education categories. The prediabetes group generally occupies an intermediate position, reinforcing a graded pattern rather than a sharp divide.
+>
+> A similar shift is visible for income. Higher income bands account for a larger share of the non-diabetic group, while individuals with diabetes are proportionally more represented in lower and middle income categories. Importantly, these are within-group proportions, meaning all socio-economic levels are present across diabetes categories, but their relative composition differs.
+>
+> Overall, the distributions suggest that lower socio-economic position is more common among individuals with diabetes in this sample. However, the considerable overlap across categories indicates that education and income alone do not fully differentiate diabetes status, supporting the need for multivariable adjustment.
+
+#### 3.2.4 BMI × Diabetes status, stratified by Sex
+
+```{r}
+ggplot(diab, aes(x = Diabetes, y = BMI, fill = Diabetes)) +
+  geom_boxplot(outlier.alpha = 0.2, width = 0.7) +
+  facet_wrap(~ Sex) +
+  labs(
+    title = "BMI distribution by diabetes status and sex",
+    x = "Diabetes status",
+    y = "Body Mass Index"
+  ) +
+  theme(
+    legend.position = "none")
+
+```
+
+> The boxplots show a clear upward shift in BMI across diabetes categories for both sexes. Within women and men separately, the median BMI increases progressively from the **No diabetes** group to **Prediabetes** and is highest among those with **Diabetes**, with the entire interquartile range also moving to higher values. All three groups display right-skewed distributions, with a larger number of very high BMI values in the diabetes group, indicating that excess body weight is more common and more severe among individuals with diabetes.
+>
+> Sex differences are present but modest: men tend to have slightly higher BMI than women within the same diabetes category, but the overall pattern of increasing BMI from no diabetes through prediabetes to diabetes is consistent in both sexes. This plot therefore reinforces BMI as a key metabolic factor associated with progression from normoglycaemia to prediabetes and diabetes in this sample.
+
+### 3.3 Health Indicators × Diabetes status
+
+#### 3.3.1 Heatmap: HighBP × HighChol × Diabetes
+
+```{r}
+bp_chol_heatmap <- 
+  diab |>
+  count(Diabetes, HighBP, HighChol, name = "n") |>
+  group_by(Diabetes) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup() 
+
+ggplot(bp_chol_heatmap,aes(x = HighBP, y = HighChol, fill = prop)) +
+  geom_tile(colour = "white") +
+  geom_text(aes(label = percent(prop, accuracy = 1)),
+          colour = "white", size = 3.5) +
+  facet_wrap(~ Diabetes, nrow = 1) +
+  labs(
+    title = "Joint prevalence of hypertension and high cholesterol by diabetes status",
+    x = "Hypertension status (Blood Pressure)",
+    y = "Cholesterol status") +
+  theme(
+    legend.position = 'none',
+    axis.line = element_line(colour = "black"))
+```
+
+> The heatmap shows that cardiometabolic co-morbidities cluster increasingly as diabetes status worsens. Among individuals **without diabetes**, the most common profile is having neither condition (45%), and only about **20%** have both high blood pressure and high cholesterol. In the **prediabetes** group, the share with both conditions rises to **44%**, and in the **diabetes** group it increases further to **54%**, while the proportion with neither condition falls to 19% and 12%, respectively.
+>
+> The progressive shift from “no high BP / no high cholesterol” towards “high BP / high cholesterol” across the three diabetes categories indicates that hypertension (Blood Pressure) and High Cholesterol frequently co-occur with impaired glycaemic status. This supports the view that prediabetes and diabetes in this sample are embedded within a broader, clustered cardiovascular risk profile rather than occurring in isolation.
+
+#### 3.3.2 Physical activity × BMI × Diabetes
+
+```{r}
+ggplot(diab,
+       aes(x = Diabetes, y = BMI, fill = PhysActivity)) +
+  geom_boxplot(
+    position = position_dodge(width = 0.8),
+    width = 0.7,
+    outlier.alpha = 0.2
+  ) +
+  labs(
+    title = "BMI by diabetes status and physical activity",
+    x = "Diabetes status",
+    y = "Body Mass Index",
+    fill  = "Physical activity"
+  ) 
+
+```
+
+> Within each diabetes category, individuals who report no physical activity have consistently higher BMI than those who are physically active, with higher medians and upper quartiles. In both activity groups, BMI increases progressively from the non-diabetic group to prediabetes and is highest among those with diabetes. All distributions are markedly right-skewed, with a concentration of very high BMI values particularly among inactive individuals with diabetes. This suggests that both higher adiposity and lack of physical activity are common among participants with impaired glycaemic status.
+
+```{r}
+#| echo: false
+ggplot(diab,
+       aes(x = Diabetes, y = BMI, fill = PhysActivity)) +
+  geom_boxplot(
+    position = position_dodge(width = 0.8),
+    width = 0.7,
+    outlier.alpha = 0.2
+  ) +
+  labs(
+    title = "BMI by diabetes status and physical activity (Zoomed)",
+    x = "Diabetes status",
+    y = "Body Mass Index",
+    fill = "Physical activity") +
+  coord_cartesian(ylim = c(15,40)) 
+```
+
+> Because BMI is highly right-skewed with a small number of extreme values, a zoomed version of this figure is provided to highlight differences in the central distributions. The zoom confirms that, within each diabetes category, inactive individuals have higher median BMI than those who report physical activity, and that BMI levels increase progressively from no diabetes to prediabetes and diabetes in both activity groups
+
+#### 3.3.3 Mental Health vs Physical Health by Diabetes
+
+```{r}
+#| message: false
+ggplot(diab,
+       aes(x = MentHlth, y = PhysHlth)) +
+  geom_hex() +
+  facet_wrap(~ Diabetes, nrow = 1)  +
+  labs(
+    title = "Joint distribution of mentally and physically unhealthy days by diabetes status",
+    x = "Mentally unhealthy days (past 30 days)",
+    y = "Physically unhealthy days (past 30 days)"
+    ) +
+  theme(legend.position = 'none')
+```
+
+> Across all diabetes categories, mentally and physically unhealthy days span the full 0–30 range, indicating substantial heterogeneity in health-related quality of life. Higher values on one dimension tend to co-occur with higher values on the other across all groups.
+>
+> Although the no-diabetes group shows a higher concentration of observations, this primarily reflects its much larger sample size rather than a distinct distributional pattern. Despite the much larger sample size in the non-diabetic group, the diabetes panel still shows comparable density in the high (20–30 days) region. This suggests a modest shift towards more frequent joint mental and physical unhealthy days among individuals with impaired glycaemic status, although the overall distributions still overlap heavily across groups.
+
+#### 3.3.4 Average Mental And Physical Health Distribution by Diabetes
+
+```{r}
+#| include: false
+age_ment_summary <- diab |>
+  group_by(Diabetes, Age) |>
+  summarise(
+    mean_days = mean(MentHlth),
+    .groups = "drop"
+  )
+
+gg_men_hlth <- ggplot(age_ment_summary,
+       aes(x = Age, y = mean_days,
+           colour = Diabetes,
+           group = Diabetes)) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  labs(
+    x = "Age group",
+    y = "Mean mentally unhealthy days",
+    colour = "Diabetes status"
+  ) +
+  theme(
+     axis.text.x = element_text(angle = 45, hjust = 1),
+     legend.position = "bottom"
+  )
+
+age_phys_summary <- diab |>
+  group_by(Diabetes, Age) |>
+  summarise(
+    mean_days = mean(PhysHlth),
+    .groups = "drop"
+  )
+
+gg_phys_hlth <- ggplot(age_phys_summary,
+       aes(x = Age, y = mean_days,
+           colour = Diabetes,
+           group = Diabetes)) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  labs(
+    x = "Age group",
+    y = "Mean physically unhealthy days",
+    colour = "Diabetes status"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+ )
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 15
+
+
+combined_health <- gg_men_hlth | gg_phys_hlth
+
+combined_health +
+  plot_annotation(
+    title = "Mental and physical health burden by age and diabetes status",
+    subtitle = "Mean unhealthy days (past 30 days) across age groups",
+    theme = theme(
+      plot.title = element_text(size = 18, face = "bold"),
+      plot.subtitle = element_text(size = 14)
+    )
+  )
+```
+
+> Clear age gradients are evident for both mental and physical health burden, with consistent separation by diabetes status.
+>
+> For **mentally unhealthy days**, individuals with diabetes and prediabetes report substantially higher mean values than those without diabetes across most age groups. The difference is most pronounced in early-to-mid adulthood (approximately 30–54 years), after which mean mentally unhealthy days decline across all groups. Despite this decline in older age bands, individuals with diabetes continue to report higher values than the non-diabetic group.
+>
+> For **physically unhealthy days**, the gradient by diabetes status is more pronounced and persistent. Mean physically unhealthy days increase from young adulthood into mid-to-late adulthood, particularly among individuals with diabetes, peaking around ages 45–59. In contrast, those without diabetes show a gradual increase with age but remain consistently lower than both prediabetes and diabetes groups.
+>
+> Overall, the patterns suggest that diabetes status is associated with greater health burden across the life course, with stronger and more sustained differences observed for physical health than for mental health.
+
+#### 3.3.5 Diabetes x Binary Predictors
+
+```{r}
+#| fig-height: 10
+#| fig-width: 14
+
+binary_vars <- c("Smoker", "Stroke","HeartDiseaseorAttack", "PhysActivity",
+                 "HvyAlcoholConsump", "DiffWalk","CholCheck","AnyHealthcare",
+                 "NoDocbcCost","Veggies")
+
+bin_long <- diab |>
+  select(Diabetes, all_of(binary_vars)) |>
+  pivot_longer(
+    cols = -Diabetes,
+    names_to = "Indicator",
+    values_to = "Status"
+  ) |>
+  count(Diabetes, Indicator, Status, name = "n") |>
+  group_by(Diabetes, Indicator) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup()
+
+ggplot(bin_long,
+       aes(x = Diabetes, y = prop, fill = Status)) +
+  geom_col(position = "fill") +
+  facet_wrap(~ Indicator, ncol = 5) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Prevalence of binary health and lifestyle indicators by diabetes status",
+    x = "Diabetes status",
+    y = "Proportion",
+    fill = "Indicator status") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+
+
+```
+
+> The stacked bar plots show that several binary indicators exhibit strong gradients across diabetes categories, while others are more weakly related to diabetes status. Difficulty walking (DiffWalk) and history of heart disease or heart attack are markedly more prevalent among individuals with diabetes than among those without diabetes, with the “Yes” proportion increasing progressively from *No diabetes* through *Prediabetes* to *Diabetes*. Physical activity shows the opposite pattern, with the proportion reporting any physical activity declining as diabetes status worsens. Reported vegetable consumption (Veggies) remains high across all groups, with only a modest reduction observed among individuals with diabetes. In contrast, smoking and heavy alcohol consumption display only small differences across diabetes categories, and healthcare coverage and cost-related barriers remain high and low, respectively, across all groups, with minimal variation by diabetes status. Overall, the figure suggests that cardiometabolic and functional impairment indicators (DiffWalk, HeartDiseaseorAttack) and physical inactivity are more strongly associated with diabetes than other behavioural factors such as smoking, heavy alcohol use, or reported vegetable intake.
+
+#### 3.3.6 Accumulation of Risk Factors by Diabetes status
+
+```{r}
+diab_risk <- diab |>
+  mutate(
+    Obese = if_else(BMI >= 30, 1, 0),
+
+    risk_count = (HighBP == "High") +
+                 (HighChol == "High") +
+                  Obese +
+                 (PhysActivity == "No") +
+                 (Smoker == "Yes")) |>
+  mutate(
+    risk_group = case_when(
+      risk_count == 0 ~ "0",
+      risk_count == 1 ~ "1",
+      risk_count == 2 ~ "2",
+      risk_count == 3 ~ "3",
+      risk_count >= 4 ~ "4+"),
+    risk_group = factor(risk_group,
+                        levels = c("0","1","2","3","4+")))
+
+diab_risk |>
+  count(Diabetes, risk_group) |>
+  group_by(Diabetes) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup() |> 
+  
+  ggplot(aes(x = risk_group, y = prop, fill = Diabetes)) +
+    geom_col(position = "fill") +
+    scale_y_continuous(labels = percent_format()) +
+    labs(
+      title = "Accumulation of cardiometabolic risk factors by diabetes status",
+      x = "Number of risk factors present",
+      y = "Proportion within diabetes group",
+      fill = "Diabetes status"
+    ) 
+
+```
+
+> A pronounced dose–response pattern is observed between accumulated cardiometabolic risk factors and diabetes status. As the number of risk factors increases, the proportion of individuals classified with diabetes rises progressively, while the share of non-diabetic individuals declines sharply. Prediabetes consistently occupies an intermediate position, supporting a graded association rather than a threshold effect. This pattern reinforces the clustering of metabolic risk within impaired glycaemic states.
+
+### **3.4 Association strength**
+
+To complement the descriptive patterns in Sections 3.2–3.3, selected **effect-size measures** are computed to quantify the strength of association between diabetes status and key predictors. When assessing relationships between numeric variables, measures such as Pearson’s or Spearman’s correlation are commonly used to quantify the strength of association. For categorical variables, however, correlation coefficients are not appropriate. Instead, Cramer’s V provides an effect size measure derived from the chi-square statistic, quantifying the overall strength of association within a contingency table. It ranges from 0 (no association) to 1 (perfect association), with larger values indicating stronger relationships between categorical variables.
+
+```{r}
+vars <- c("HighBP","HighChol","PhysActivity","Smoker","DiffWalk",
+          "HeartDiseaseorAttack","NoDocbcCost","AnyHealthcare",
+          "Sex","Age","Education","Income")
+
+cv <- sapply(vars, \(v) cramerV(table(diab$Diabetes, diab[[v]])))
+
+df_cv <- tibble(Predictor = vars, CramersV = as.numeric(cv)) |>
+  arrange(desc(CramersV)) |>
+  mutate(Predictor = factor(Predictor, levels = rev(Predictor)))
+
+ggplot(df_cv, aes(x = Predictor, y = CramersV)) +
+  geom_col(width = 0.7) +
+  geom_text(aes(label = round(CramersV, 2)),
+            hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  labs(
+    title = "Association strength with diabetes status (Cramer’s V)",
+    x = NULL,
+    y = "Cramer’s V"
+  )  +
+  expand_limits(y = max(df_cv$CramersV) + 0.05)
+
+
+```
+
+> Although hypertension (V = 0.27), difficulty walking (V = 0.22), and high cholesterol (V = 0.21) exhibit the largest effect sizes relative to other predictors, the magnitudes remain moderate rather than strong in absolute terms. This suggests that diabetes status is associated with multiple factors, but no single categorical predictor alone provides substantial discriminatory power. Age (V = 0.14) and socioeconomic indicators such as income (V = 0.12) and education (V = 0.09) show weaker yet non-negligible associations, while sex (V = 0.03) and healthcare coverage (V = 0.02) display minimal association. Overall, the pattern supports a multifactorial structure in which cardiometabolic and functional indicators contribute meaningfully but not deterministically to diabetes status. These effect sizes are reported to prioritise predictors for multivariable modelling in Task 2.
+
+## 4 Key Findings
+
+-   **Age and BMI show comparatively stronger associations with diabetes status:**\
+    Diabetes and prediabetes are concentrated in older age groups, and BMI increases progressively across diabetes categories. Relative to other predictors, age and BMI show more pronounced associations with diabetes status, although the overall magnitudes remain moderate rather than strong. This suggests that while these factors are important, neither alone explains diabetes status.
+
+-   **Cardiometabolic risk factors cluster with diabetes:**\
+    Hypertension and high cholesterol frequently co-occur, with joint prevalence rising sharply from no diabetes to prediabetes and diabetes. These variables show the strongest categorical associations with diabetes status in this dataset, though the effect sizes indicate moderate relationships rather than dominant ones. This pattern supports the interpretation that diabetes is part of a broader cardiovascular risk profile.
+
+-   **Functional and cardiovascular burden increases with diabetes:**\
+    Difficulty walking and history of heart disease or heart attack are more common among individuals with diabetes. The association with difficulty walking is particularly noticeable relative to several other predictors, highlighting the link between diabetes and functional health burden.
+
+-   **Lifestyle behaviours show mixed and weaker patterns:**\
+    Physical activity shows a modest association with diabetes status, consistent with its relationship to BMI. In contrast, smoking, heavy alcohol consumption, and healthcare access indicators display relatively weak associations, suggesting they do not strongly differentiate diabetes status on their own.
+
+-   **Substantial overlap remains across health and socio-economic measures:**\
+    Mental and physical health burden, education, and income distributions overlap considerably across diabetes groups. Overall, the modest association magnitudes across predictors indicate that diabetes status reflects multiple contributing factors rather than being driven by any single variable, reinforcing the need for multivariable modelling.
+
+## 5 Research Questions
+
+### **RQ1: Multivariable cardiometabolic association**
+
+To what extent are cardiometabolic indicators (BMI category, high blood pressure, and high cholesterol) jointly associated with diabetes status, and do these associations vary across age and sex groups?
+
+**Rationale:**\
+Section **3.2.1** (Age–Sex distribution by Diabetes Status) shows a strong demographic structure to diabetes: prediabetes/diabetes are heavily concentrated in older age groups, with very low prevalence at younger ages.This implies that any cardiometabolic comparison (BMI, blood pressure, cholesterol) must account for age (and potentially sex) to avoid confounding.
+
+Section **3.3.2** (Physical activity × BMI × Diabetes) shows a clear shift in BMI upward across diabetes categories, and additionally indicates that within each diabetes category, those reporting no physical activity tend to have higher BMI. Section **3.3.1** (Heatmap: HighBP × HighChol × Diabetes) further shows cardiometabolic clustering: the joint prevalence of high blood pressure and high cholesterol increases sharply from no diabetes → prediabetes → diabetes. The **“Accumulation of risk factors by diabetes status”** plot reinforces a graded, dose–response-style pattern in risk burden rather than a single-threshold effect.
+
+Because BMI, hypertension, and cholesterol are interrelated exposures and are embedded within the age/sex structure observed in **3.2.1**, crude (unadjusted) comparisons are not sufficient. This motivates **multivariable modelling** to estimate *independent* associations of BMI, HighBP, and HighChol with diabetes status, and to formally assess whether effect sizes differ across age and sex strata (effect heterogeneity). This is consistent with prior evidence identifying obesity, hypertension, and dyslipidaemia as core elements of the metabolic risk constellation for type 2 diabetes and noting demographic variation in these relationships (Ismail et al., 2021; Hill-Briggs et al., 2021).
+
+### **RQ2: Predictive value of modifiable behaviours**
+
+How accurately can diabetes status be predicted using demographic variables alone compared with demographics plus modifiable behavioural factors (physical activity, diet proxies, smoking, and alcohol consumption), and what is the incremental contribution of modifiable behaviours to prediction of diabetes status?
+
+**Rationale:**\
+Section **3.3.5** (Diabetes × Binary Predictors) indicates that some modifiable behaviours show clearer separation than others: physical activity declines as diabetes status worsens, whereas smoking and heavy alcohol consumption show comparatively smaller differences; vegetable consumption remains high, with only a modest reduction. In parallel, Section **3.3.2** (Physical activity × BMI × Diabetes) suggests behavioural relevance through consistent BMI differences between active and inactive groups within diabetes categories.
+
+However, the outcome distribution (Section **3.1**, diabetes class imbalance) indicates that baseline prevalence is asymmetric, which means predictive performance must be evaluated using metrics that account for imbalance (rather than relying on accuracy alone). This sets up a practical, real-world question aligned with the brief: **do modifiable behaviours add meaningful predictive signal beyond demographics**, and if so, *how much*?
+
+A staged modelling comparison (demographics-only vs demographics + modifiable behaviours) directly quantifies the **incremental contribution** of potentially actionable factors. This matters for prevention-oriented targeting, since behavioural variables are, in principle, intervenable. Existing peer-reviewed evidence supports physical activity as protective against type 2 diabetes risk and motivates the evaluation of behavioural features for risk stratification (Aune et al., 2015; Xie et al., 2019).
+
+### **RQ3: Socioeconomic moderation and stability of adjusted associations**
+
+After jointly adjusting for demographic, behavioural, cardiometabolic, and healthcare access factors, which predictors remain independently associated with diabetes status? Do socioeconomic indicators modify key behavioural associations, and are these relationships robust under resampling?
+
+**Rationale:**\
+Section **3.2.3** (Education–Income by Diabetes Status) shows clear socioeconomic gradients: diabetes is more represented in lower education and income categories, while non-diabetes is more represented at higher socioeconomic levels. Section **3.3.5** (Diabetes × Binary Predictors) adds an access-related dimension by including **NoDocbcCost** and **AnyHealthcare**, indicating that cost barriers exist and may align with the socioeconomic patterns in **3.2.3**. Additionally, the **risk factor accumulation** plot suggests that risk burdens stack rather than occur in isolation, which increases the likelihood of confounding between socioeconomic position, behaviours, and cardiometabolic status.
+
+These EDA findings imply diabetes risk is embedded within broader structural inequality rather than being explained by a single behavioural or clinical factor. Therefore, **fully adjusted multivariable modelling** is necessary to determine which predictors retain independent association with diabetes status after accounting for demographic, behavioural, cardiometabolic, and access variables.
+
+This question also warrants **moderation (interaction) testing**, because the translation of behavioural risk into disease burden may differ by socioeconomic position (e.g., the same reported behaviour could have different health implications under different resource constraints). This aligns with evidence that social determinants shape exposure, vulnerability, and access to care in diabetes (Hill-Briggs et al., 2021) and with systematic evidence linking socioeconomic inequality to diabetes outcomes (Tatulashvili et al., 2020). Finally, because observational survey predictors are correlated, **resampling-based stability checks** (e.g., bootstrap) help ensure that identified predictors/interactions reflect stable signals rather than model-specification artefacts, supporting more defensible interpretation in Task 2.
+
+## Aims and Objectives
+
+**Aim:**
+
+To quantify and interpret demographic, cardiometabolic, behavioural, healthcare access, and socioeconomic determinants of diabetes status in a large cross-sectional adult health survey, distinguishing adjusted associations, predictive utility, and socioeconomic heterogeneity, with attention to EDI/ethics and model stability.
+
+## Objectives
+
+**Objective 1 (RQ1):**\
+Estimate adjusted associations of BMI category, HighBP, and HighChol with diabetes status using multivariable models, and test age/sex effect heterogeneity (interaction terms / stratified effects).
+
+**Objective 2 (RQ2):**\
+Compare demographic-only versus demographics + behaviour models using ROC–AUC, precision, recall, and F1-score, and quantify incremental value of modifiable behaviours.
+
+**Objective 3 (RQ3):**\
+Fit fully adjusted models to identify predictors that remain independently associated with diabetes status; test SES/access moderation via interaction terms; and evaluate robustness via resampling (e.g., repeated CV/bootstrapping) and subgroup performance checks to support EDI-aware interpretation.
+
+## 7 Ethical, EDI & Sustainability Considerations
+
+### **Data limitations and potential biases**
+
+> This analysis is based on cross-sectional, self-reported survey data, which introduces several sources of potential bias. Variables such as diabetes status, physical activity, diet, and mental health are subject to recall error, social desirability bias, and misclassification. In particular, undiagnosed diabetes or inconsistent access to healthcare may lead to under-reporting or inaccurate classification of diabetes status.
+>
+> The cross-sectional design further limits interpretation, as observed associations reflect correlations at a single point in time and do not capture temporal ordering or disease progression. As a result, all findings are interpreted descriptively and associationally, without causal claims.
+
+### **Equity and subgroup considerations**
+
+> Differences observed across age, sex, income, education, and healthcare access are interpreted cautiously, recognising that these variables reflect broader structural and contextual factors rather than intrinsic group characteristics. Because the data were not collected for predictive decision-making and originate from an earlier survey cycle, observed patterns may not fully represent current population dynamics.
+>
+> In subsequent modelling, there is a risk that class imbalance and subgroup heterogeneity could lead to uneven model performance or spurious importance of certain predictors. These issues motivate careful evaluation of model behaviour across subgroups and reinforce the use of population-level interpretation rather than individual-level inference.
+
+## 8 Acknowledgements
+
+Several visualisations in this report were informed by publicly available examples and best-practice guidance from the *R Graph Gallery* and the *Epidemiology R Handbook*. These resources were used as references for plot structure, layout, and graphical conventions (e.g. age–sex pyramids and categorical comparison plots). All data processing, analytical decisions, and interpretations were independently implemented and adapted for the purposes of this study.
+
+1.  *The R Graph Gallery*. <https://r-graph-gallery.com/>
+
+2.  [The Epidemiologist R Handbook](https://www.epirhandbook.com/en/) - *Age and sex pyramids*. <https://www.epirhandbook.com/en/new_pages/age_pyramid.html>
+
+## 9 References
+
+1.  Aune, D., Norat, T., Leitzmann, M., Tonstad, S., & Vatten, L. J. (2015). Physical activity and the risk of type 2 diabetes: A systematic review and dose–response meta-analysis. *European Journal of Epidemiology*.
+
+2.  Hill-Briggs, F., Adler, N. E., et al. (2021). Social determinants of health and diabetes: A scientific review. *Diabetes Care*.
+
+3.  Ismail, L., Materwala, H., & colleagues. (2021). Association of risk factors with type 2 diabetes: A systematic review.
+
+4.  Tatulashvili, S., et al. (2020). Socioeconomic inequalities and type 2 diabetes complications: A systematic review.
+
+5.  Xie, Z., et al. (2019). Building risk prediction models for type 2 diabetes using machine learning techniques. *Preventing Chronic Disease*.
+
+6.  Muhammad, M. A., Sani, J., & Ahmed, M. M. (2025). Explainable machine learning for predicting and interpreting self-reported diabetes using BRFSS data.
+
+## Session Information
+
+```{r}
+#| echo: false
+sessionInfo()
+```

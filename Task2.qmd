@@ -1,0 +1,2754 @@
+---
+title: "Modelling Diabetes Health Indicators"
+subtitle: "MA7442 Modelling Data — Assessment 1 (Task 2)"
+author: "Shahmeer Shahzad"
+date: "2026-03-02"
+format:
+  pdf:
+    geometry:
+      - top=2cm
+      - bottom=2cm
+      - left=1.5cm
+      - right=1.5cm
+    documentclass: article
+    df-print: kable
+    mainfont: "Arial"
+editor: 
+  markdown: 
+    wrap: 72
+bibliography: references.bib
+---
+
+```{r}
+#| label: Loading_Packages
+#| message: false
+#| warning: false
+#| include: false
+
+# Packages
+library(tidymodels)
+library(tidyverse)
+library(skimr)
+library(scales)
+library(patchwork)
+library(viridis)
+library(workflowsets)
+library(rcompanion)
+library(themis)
+library(ranger)
+library(vip)
+library(fastshap)
+library(shapviz)
+library(knitr)
+library(probably)
+library(conflicted)
+library(vip)
+
+tidymodels_prefer(quiet = TRUE)
+conflicts_prefer(yardstick::accuracy)
+
+```
+
+```{r}
+#| label: plot-customise
+#| include: false
+
+# Plot format and dimension
+knitr::opts_chunk$set(dev = "cairo_pdf")
+knitr::opts_chunk$set(fig.width = 14, fig.height = 7)
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE
+)
+
+# Set global ggplot theme
+theme_set(
+  theme_classic(base_size = 16) +
+    theme(
+      plot.title    = element_text(size = 20, face = "bold"),
+      axis.title    = element_text(size = 18),
+      axis.text     = element_text(size = 14),
+      legend.title  = element_text(size = 13),
+      legend.text   = element_text(size = 12),
+      strip.text    = element_text(face = "bold", size = 14),
+      legend.background = element_rect(
+        colour    = "black",
+        fill      = "white",
+        linewidth = 0.5
+      )
+    )
+)
+```
+
+```{r}
+#| label: palettes-used
+#| include: false
+pal_sex <- c(
+  "Female" = "orange", 
+  "Male"   = "darkgreen"   
+)
+
+pal_binary <- c(
+  "No"  = "#BBBBBB",  
+  "Yes" = "#882255"  
+)
+
+pal_genhlth <- c(
+  "Excellent" = "#117733",  
+  "Very good" = "#44AA99",  
+  "Good"      = "#DDCC77",  
+  "Fair"      = "#EE8866",  
+  "Poor"      = "#CC6677"   
+)
+```
+
+# 1. Introduction and Reflection on Task 1 Feedback
+
+This report constitutes Task 2 of the MA7442 *Modelling Data*
+assessment. It builds directly on the exploratory data analysis (EDA)
+and research questions developed in Task 1, incorporating the feedback
+received and extending the analytical scope accordingly.
+
+In Task 1, the EDA was intentionally centred on diabetes status as the
+primary outcome variable. This focus was adopted to maintain analytical
+coherence and prevent the report from becoming overly expansive in
+scope. Given the breadth of variables available in the dataset,
+conducting a fully comprehensive EDA across multiple outcomes at that
+stage would likely have diluted the conceptual focus and resulted in
+excessive length. The analysis was therefore deliberately targeted to
+support a diabetes-oriented modelling framework.
+
+Feedback indicated, however, that restricting the EDA exclusively to
+diabetes limited the diversity of subsequent research questions and led
+to conceptual overlap. Task 2 therefore broadens the analytical
+framework and introduces dedicated non-diabetes outcome analyses,
+substantially expanding the empirical foundation of the study.
+
+## 1.1 Reflection on Task 1 Feedback
+
+Three areas of feedback were identified for improvement.
+
+**Scope of the EDA.**\
+The Task 1 EDA effectively characterised the dataset but examined
+associations solely in relation to diabetes status. This constrained the
+diversity of the research questions. In Task 2, Section 3 introduces a
+comprehensive EDA block examining cardiovascular indicators, general
+health measures, and behavioural variables as primary outcomes in their
+own right.
+
+**Research question overlap.**\
+Because the initial EDA centred exclusively on diabetes, the research
+questions were conceptually similar. In response, the structure has been
+revised. RQ1 is retained in refined form; the previous RQ2 and RQ3 have
+been consolidated into a single modelling-focused question (new RQ2);
+and two new research questions (RQ3 and RQ4) are derived directly from
+the expanded non-diabetes EDA.
+
+**Figure line type.**\
+In Task 1, a `geom_line` layer was used to connect mean unhealthy days
+across age groups. Since age group is an ordered categorical variable
+rather than a continuous measure, this implied unjustified linear
+interpolation. In Task 2, age-structured visualisations have been
+revised to use `geom_col` or lollipop-style representations, preserving
+ordinal structure without implying continuity between categories.
+
+## 1.2 Rationale for Expanded Exploratory Analysis
+
+<div>
+
+The expanded EDA presented in Task 2 is intentionally broader in scope
+than in Task 1. This extension responds directly to feedback requesting
+analysis of non-diabetes outcomes and greater utilisation of the
+dataset. As a result, Section 3 systematically examines cardiovascular
+indicators, health status variables, and behavioural correlates using
+multiple complementary visualisations.
+
+Given the size and multidimensional nature of the dataset, this
+comprehensive exploration necessarily increases the length of the EDA
+section. However, the extended analysis is structured purposefully: each
+block serves to establish demographic gradients, socioeconomic
+patterning, behavioural clustering, and outcome progression. The
+additional length reflects analytical depth rather than redundancy, and
+it provides the empirical basis for the revised and diversified research
+questions developed in Task 2.
+
+</div>
+
+------------------------------------------------------------------------
+
+# 2. Data Preparation
+
+The dataset and all variable recoding steps are identical to those
+described in Task 1 and are reproduced in the setup chunk below (Hidden)
+to ensure a fully self-contained, reproducible document. No additional
+transformations are required for the EDA in Section 3. All 253,680
+records are retained; no missing values were present.
+
+```{r}
+#| label: data-import-and-recode
+#| message: false
+#| warning: false
+#| include: false
+
+diab <- read_csv("dataset1.csv")
+
+diab <- diab |>
+  mutate(
+    Diabetes = factor(
+      Diabetes_012,
+      levels = c(0, 1, 2),
+      labels = c("No diabetes", "Prediabetes", "Diabetes")
+    ),
+    across(
+      c(CholCheck, Smoker, Stroke, HeartDiseaseorAttack,
+        PhysActivity, Fruits, Veggies, HvyAlcoholConsump,
+        AnyHealthcare, NoDocbcCost, DiffWalk),
+      function(x) factor(x, levels = c(0, 1), labels = c("No", "Yes"))
+    ),
+    across(
+      c(HighBP, HighChol),
+      function(x) factor(x, levels = c(0, 1), labels = c("Not High", "High"))
+    ),
+    Sex = factor(Sex, levels = c(0, 1), labels = c("Female", "Male")),
+    GenHlth = factor(
+      GenHlth,
+      levels  = 1:5,
+      labels  = c("Excellent", "Very good", "Good", "Fair", "Poor"),
+      ordered = TRUE
+    ),
+    Age = factor(
+      Age,
+      levels  = 1:13,
+      labels  = c("18–24", "25–29", "30–34", "35–39", "40–44",
+                  "45–49", "50–54", "55–59", "60–64", "65–69",
+                  "70–74", "75–79", "80+"),
+      ordered = TRUE
+    ),
+    Education = factor(
+      Education,
+      levels  = 1:6,
+      labels  = c("Kindergarten or less", "Grades 1–8",
+                  "Grades 9–11", "High school graduate",
+                  "Some college / technical", "College graduate"),
+      ordered = TRUE
+    ),
+    Income = factor(
+      Income,
+      levels  = 1:8,
+      labels  = c("< $10k", "$10k–$14k", "$15k–$19k", "$20k–$24k",
+                  "$25k–$34k", "$35k–$49k", "$50k–$74k", "$75k+"),
+      ordered = TRUE
+    )
+  ) |>
+  select(-Diabetes_012)
+```
+
+------------------------------------------------------------------------
+
+# 3. Additional Exploratory Data Analysis: Non-Diabetes Outcomes
+
+The following analyses explore relationships among health, lifestyle,
+and socioeconomic variables *independently of diabetes status*. The goal
+is to characterise the joint structure of these variables, in particular
+to understand what shapes self-reported general health, mental health
+burden, and functional limitation, and to motivate the non-diabetes
+research questions introduced in Section 4.
+
+## 3.1 Cardiovascular Risk Indicators: Demographic, Socioeconomic and Behavioural Gradients
+
+This section explores the population structure and correlates of key
+cardiovascular risk indicators, namely high blood pressure, high
+cholesterol, and stroke. The analysis moves beyond diabetes to examine
+how these outcomes are patterned across age, sex, socioeconomic
+position, and behavioural factors. Emphasis is placed on identifying
+demographic concentration, socioeconomic gradients, and clustering with
+related health behaviours. The objective is to establish structural
+regularities in the data that may inform subsequent modelling and risk
+interpretation.
+
+```{r}
+#| label: age-sex-pyramid-prep
+#| include: false
+
+bp_pyramid <- diab |>
+  count(HighBP, Age, Sex) |>
+  group_by(HighBP, Sex) |>
+  mutate(
+    percent = 100 * n / sum(n)
+  ) |>
+  ungroup() |>
+  mutate(
+    percent_signed = case_when(
+      Sex == "Male"   ~ -percent,
+      Sex == "Female" ~  percent,
+      TRUE            ~ NA_real_
+    )
+  )
+
+chol_pyramid <- diab |>
+  count(HighChol, Age, Sex) |>
+  group_by(HighChol, Sex) |>
+  mutate(
+    percent = 100 * n / sum(n)
+  ) |>
+  ungroup() |>
+  mutate(
+    percent_signed = case_when(
+      Sex == "Male"   ~ -percent,
+      Sex == "Female" ~  percent,
+      TRUE            ~ NA_real_))
+
+stroke_pyramid <- diab |>
+  filter(!is.na(Stroke), !is.na(Age), !is.na(Sex)) |>
+  count(Stroke, Age, Sex) |>
+  group_by(Stroke, Sex) |>
+  mutate(
+    percent = 100 * n / sum(n)
+  ) |>
+  ungroup() |>
+  mutate(
+    percent_signed = case_when(
+      Sex == "Male"   ~ -percent,
+      Sex == "Female" ~  percent,
+      TRUE            ~ NA_real_
+    )
+  )
+
+```
+
+### 3.1.1 Age–Sex Distribution by High Blood Pressure Status
+
+```{r}
+#| label: highbp-age-sex-pyramid
+#| fig.height: 7
+#| fig.width: 14
+
+ggplot(bp_pyramid,
+       aes(x = Age, y = percent_signed, fill = Sex)) +
+  geom_col(width = 0.9, colour = "white") +
+  coord_flip() +
+  facet_wrap(~ HighBP, nrow = 1) +
+  scale_y_continuous(
+    labels = function(x) paste0(abs(x), "%")
+  ) +
+  scale_fill_manual(
+    values = pal_sex
+  ) +
+  labs(
+    title = "Age–sex distribution by high blood pressure status",
+    x     = "Age group",
+    y     = "Percent within blood pressure group",
+    fill  = "Sex"
+  )
+```
+
+### 3.1.2 Age–sex distribution by **high cholesterol** status
+
+```{r}
+#| label: highchol-age-sex-pyramid
+#| fig-height: 7
+#| fig-width: 14
+
+ggplot(chol_pyramid,
+       aes(x = Age, y = percent_signed, fill = Sex)) +
+  geom_col(width = 0.9, colour = "white") +
+  coord_flip() +
+  facet_wrap(~ HighChol, nrow = 1) +
+  scale_y_continuous(
+    labels = function(x) paste0(abs(x), "%")
+  ) +
+  scale_fill_manual(
+    values = pal_sex
+  ) +
+  labs(
+    title = "Age–sex distribution by high cholesterol status",
+    x     = "Age group",
+    y     = "Percent within cholesterol group",
+    fill  = "Sex")
+```
+
+### 3.1.3 Age–sex distribution by stroke history
+
+```{r}
+#| label: stroke-age-sex-pyramid
+#| fig-height: 7
+#| fig-width: 14
+
+stroke_pyramid <- diab |>
+  count(Stroke, Age, Sex) |>
+  group_by(Stroke, Sex) |>
+  mutate(
+    percent = 100 * n / sum(n)
+  ) |>
+  ungroup() |>
+  mutate(
+    percent_signed = case_when(
+      Sex == "Male"   ~ -percent,
+      Sex == "Female" ~  percent,
+      TRUE            ~ NA_real_
+    )
+  )
+
+ggplot(stroke_pyramid,
+       aes(x = Age, y = percent_signed, fill = Sex)) +
+  geom_col(width = 0.9, colour = "white") +
+  coord_flip() +
+  facet_wrap(~ Stroke, nrow = 1) +
+  scale_y_continuous(
+    labels = function(x) paste0(abs(x), "%")
+  ) +
+  scale_fill_manual(
+    values = pal_sex
+  ) +
+  labs(
+    title = "Age–sex distribution by stroke history",
+    x     = "Age group",
+    y     = "Percent within stroke-history group",
+    fill  = "Sex"
+  )
+```
+
+> Across all three outcomes, high blood pressure, high cholesterol, and
+> stroke, the dominant structural feature is age concentration. Each
+> “Yes” panel is heavily skewed toward the 55–69 and older age bands,
+> while representation below age 40 is minimal. This confirms that
+> cardiovascular burden in this dataset is fundamentally age-structured
+> rather than evenly distributed across the life course.
+>
+> However, the degree of age concentration differs meaningfully between
+> outcomes. High blood pressure and high cholesterol show similar
+> mid-to-late life clustering, with substantial presence beginning in
+> the 50–54 band and peaking around 60–69. Stroke, by contrast, exhibits
+> a far sharper right-skew: the “Yes” group is overwhelmingly
+> concentrated in older age bands, with negligible representation in
+> younger adults. This suggests stroke is not merely age-associated but
+> strongly age-dependent relative to the other indicators.
+>
+> Sex differences are comparatively modest within age strata for high
+> blood pressure and high cholesterol. Once age is conditioned upon,
+> male–female distributions appear broadly parallel, implying that sex
+> operates as a secondary structuring factor relative to age. In the
+> stroke group, however, there is a slight female predominance in the
+> oldest age bands, which may reflect differential survival into
+> advanced age rather than a pure sex-specific risk gradient.
+>
+> Importantly, these pyramids depict the **composition within outcome
+> groups**, not prevalence across the population. They therefore
+> highlight demographic concentration rather than risk probability. The
+> consistency across high blood pressure and high cholesterol suggests
+> shared cardiometabolic ageing processes, whereas stroke displays a
+> more extreme demographic compression, indicating it may represent the
+> culmination of accumulated vascular risk rather than an early-stage
+> cardiovascular condition.
+>
+> Taken together, the figures establish age as the primary axis of
+> cardiovascular risk patterning in this sample. Any socioeconomic or
+> behavioural gradients observed later must therefore be interpreted
+> within the context of this strong underlying demographic structure.
+
+```{r}
+#| label: ses-heatmap
+#| include: false
+
+bp_ses <- diab |>
+  mutate(
+    bp_binary = if_else(HighBP == "High", 1, 0)) |>
+  group_by(Education, Income) |>
+  summarise(prev_bp = mean(bp_binary),
+            n = n(),
+    .groups = "drop")
+
+chol_ses <- diab |>
+  mutate(chol_bin = if_else(HighChol == "High", 1, 0)) |>
+  group_by(Education, Income) |>
+  summarise(
+    prev_chol = mean(chol_bin),
+    n = n(),
+    .groups = "drop")
+
+stroke_ses <- diab |>
+  mutate(
+    stroke_bin = if_else(Stroke == "Yes", 1, 0)) |>
+  group_by(Education, Income) |>
+  summarise(prev_stroke = mean(stroke_bin),n = n(),
+    .groups = "drop")
+```
+
+### 3.1.4 Joint SES heatmap of High Blood Presure prevalence.
+
+```{r}
+#| label: highbp-ses-heatmap
+#| fig.height: 8
+#| fig.width: 15
+
+bp_ses |> 
+  ggplot(aes(x = Income, y = Education, fill = prev_bp)) +
+  geom_tile(colour = "white", linewidth = 1.2) +
+  geom_text(
+    aes(label = percent(prev_bp, accuracy = 1)),
+    colour   = "white",
+    fontface = "bold",
+    size     = 4.5) +
+  scale_fill_gradient(
+    low  = "#F1EEF6",
+    high = "#882255",
+    name = "Prevalence\nHigh BP",
+    labels = percent_format(accuracy = 1)) +
+  labs(title = "Prevalence of high blood pressure by education and income",
+    x     = "Income band",
+    y     = "Education level")
+```
+
+### 3.1.5 Joint SES heatmap of High Cholestrol prevalence.
+
+```{r}
+#| label: highchol-ses-heatmap
+#| fig.height: 8
+#| fig.width: 15
+
+chol_ses |>
+  ggplot(aes(x = Income, y = Education, fill = prev_chol)) +
+  geom_tile(colour = "white", linewidth = 1.2) +
+  geom_text(
+    aes(label = percent(prev_chol, accuracy = 1)),
+    colour   = "white",
+    fontface = "bold",
+    size     = 3.5
+  ) +
+  scale_fill_gradient(
+    low    = "#F1EEF6",      
+    high   = "#882255",      
+    name   = "Prevalence\nHigh cholesterol",
+    labels = percent_format(accuracy = 1)
+  ) +
+  labs(
+    title = "Prevalence of high cholesterol by education and income",
+    x     = "Income band",
+    y     = "Education level"
+  )
+```
+
+### 3.1.6 Joint SES heatmap of Stroke prevalence.
+
+```{r}
+#| label: stroke-ses-heatmap
+#| fig.height: 8
+#| fig.width: 15
+
+stroke_ses |>
+  ggplot(aes(x = Income, y = Education, fill = prev_stroke)) +
+  geom_tile(colour = "white", linewidth = 1.2) +
+  geom_text(
+    aes(label = percent(prev_stroke, accuracy = 1)),
+    colour = "white",
+    fontface = "bold",
+    size = 3.5) +
+  scale_fill_gradient(
+    low = "#F1EEF6",      
+    high = "#882255",
+    name = "Prevalence\nStroke history",
+    labels = percent_format(accuracy = 1)) +
+  labs(title = "Prevalence of stroke history by education and income",
+        x = "Income band",
+        y = "Education level")
+```
+
+> Across all three outcomes, a clear socioeconomic gradient is evident.
+> Prevalence is consistently highest in the lowest education and lowest
+> income strata and declines with increasing educational attainment and
+> income. The lower-left cells (least educated, lowest income) exhibit
+> the greatest burden, while college graduates in the highest income
+> bands show the lowest prevalence. This pattern indicates cumulative
+> socioeconomic disadvantage rather than a single-dimension effect.
+>
+> High blood pressure and high cholesterol display particularly strong
+> and stable two-dimensional gradients. Within nearly every education
+> category, prevalence decreases progressively as income rises.
+> Likewise, within each income band, higher education corresponds to
+> lower prevalence. The monotonic pattern across both axes suggests that
+> both income and education independently structure cardiometabolic
+> risk, rather than one merely proxying for the other.
+>
+> Stroke exhibits the same directional gradient but at substantially
+> lower absolute prevalence and with more variability across cells. Some
+> low-education, low-income cells show markedly elevated stroke
+> prevalence (e.g., 19%), while higher SES cells approach very low
+> levels. The noisier pattern likely reflects smaller counts and the
+> relative rarity of stroke, but the overall concentration in
+> socioeconomically disadvantaged groups remains clear.
+>
+> Importantly, these are crude prevalence estimates. As shown in the
+> age–sex pyramids, lower socioeconomic strata contain
+> disproportionately older individuals, and age is a dominant
+> determinant of all three outcomes. Therefore, part of the observed SES
+> gradient likely reflects demographic composition. However, the
+> persistence of a consistent gradient across both income and education
+> dimensions suggests that socioeconomic position is not merely a proxy
+> for age but a meaningful structural correlate of cardiovascular
+> burden.
+
+### 3.1.7 Prevalence Cardiovascular Outcomes Accumulated Risk Factors
+
+```{r}
+#| label: cvd-obesity-physact-prep
+#| include: false
+diab_risk <- diab |>
+  mutate(
+    Obese        = if_else(BMI >= 30, 1L, 0L),
+    Inactive     = if_else(PhysActivity == "No", 1L, 0L),
+    Smoker_bin   = if_else(Smoker == "Yes", 1L, 0L),
+    Diabetes_bin = if_else(Diabetes != "No diabetes", 1L, 0L),
+    risk_count   = Obese + Inactive + Smoker_bin + Diabetes_bin,
+    risk_group   = case_when(
+      risk_count == 0 ~ "0",
+      risk_count == 1 ~ "1",
+      risk_count == 2 ~ "2",
+      risk_count == 3 ~ "3",
+      risk_count >= 4 ~ "4+"
+    ),
+    risk_group = factor(risk_group, levels = c("0","1","2","3","4+"))
+  )
+
+cvd_long <- diab_risk |>
+  select(risk_group, HighBP, HighChol, Stroke) |>
+  pivot_longer(
+    cols      = c(HighBP, HighChol, Stroke),
+    names_to  = "Outcome",
+    values_to = "Status"
+  ) |>
+  mutate(
+    Outcome = recode(
+      Outcome,
+      HighBP   = "High blood pressure",
+      HighChol = "High cholesterol",
+      Stroke   = "Stroke history"
+    ),
+    outcome_event = case_when(
+      Outcome == "High blood pressure" ~ Status == "High",
+      Outcome == "High cholesterol"    ~ Status == "High",
+      Outcome == "Stroke history"      ~ Status == "Yes",
+      TRUE                             ~ NA
+    )
+  ) |>
+  group_by(Outcome, risk_group) |>
+  summarise(
+    prop = mean(outcome_event, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+```{r}
+#| label: cvd-obesity-physact
+#| fig.height: 6
+#| fig.width: 14
+
+
+ggplot(cvd_long, aes(x = risk_group, y = prop, fill = risk_group)) +
+  geom_col(width = 0.7) +
+  facet_wrap(~ Outcome, nrow = 1) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, 1)
+  ) +
+  scale_fill_brewer(palette = "Purples", name = "Risk\ncount") +
+  labs(
+    title = "Prevalence of cardiovascular outcomes by cardiometabolic risk factor count",
+    x     = "Number of risk factors present\n(obesity, inactivity, smoking, diabetes)",
+    y     = "Proportion with outcome"
+  )
+```
+
+> Cardiovascular outcomes show a clear **dose–response relationship with
+> the accumulation of cardiometabolic risk factors**. For both **high
+> blood pressure** and **high cholesterol**, prevalence increases
+> steadily as additional risk factors are present. Individuals with no
+> risk factors show relatively low prevalence (around one quarter to one
+> third), while those with **four or more risk factors exhibit very high
+> prevalence**, exceeding roughly **70–80%** for both conditions. This
+> pattern indicates that these outcomes are strongly associated with the
+> combined burden of obesity, physical inactivity, smoking, and
+> diabetes.
+>
+> **Stroke history follows the same upward trend**, but at substantially
+> lower levels overall. Even among individuals with multiple risk
+> factors, stroke prevalence remains below roughly **10–12%**,
+> reflecting the relative rarity of stroke compared with hypertension
+> and hypercholesterolaemia in the population.
+>
+> Overall, the figure demonstrates that **cardiometabolic risk factors
+> act cumulatively rather than independently**. As risk exposures
+> accumulate, the likelihood of cardiovascular conditions, particularly
+> hypertension and high cholesterol, increases markedly, highlighting
+> the importance of addressing multiple lifestyle and metabolic risk
+> factors simultaneously.
+
+### 3.1.8 Joint blood pressure and cholesterol profiles across age groups
+
+```{r}
+#| label: highchol-highbp-age-prep
+#| include: false
+
+bp_chol_age <- diab |>
+  count(Age, HighBP, HighChol) |>
+  group_by(Age) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup()
+
+```
+
+```{r}
+#| label: highchol-highbp-age
+#| fig-width: 14
+#| fig-height: 6
+
+ggplot(bp_chol_age,
+       aes(x = Age, y = prop, fill = interaction(HighBP, HighChol,
+                                                  sep = " / Chol: "))) +
+  geom_col(position = "fill", width = 0.85) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_fill_viridis_d(option = "D", direction = -1) +
+  labs(
+    title = "Joint blood pressure and cholesterol status by age group",
+    x     = "Age group",
+    y     = "Proportion within age group",
+    fill  = "BP / Cholesterol"
+  ) 
+```
+
+> The distribution of cardiovascular profiles shifts systematically with
+> age. Younger groups are overwhelmingly characterised by normal blood
+> pressure and cholesterol, whereas the proportion with dual elevation
+> (high/high) increases sharply from midlife onward and becomes dominant
+> in older age bands. This pattern reflects progressive cardiometabolic
+> accumulation rather than isolated risk emergence.
+>
+> Importantly, the high/high category expands more rapidly than either
+> single-risk category, indicating clustering rather than independence
+> of these conditions. By ages 65+, dual dysregulation accounts for a
+> substantial share of the population within each age group, suggesting
+> convergence of vascular risk factors with ageing.
+>
+> The pattern implies that hypertension and hypercholesterolaemia are
+> not parallel but interacting processes within cardiovascular ageing,
+> reinforcing their role as intermediate markers in the pathway toward
+> more severe vascular outcomes.
+
+### 3.1.9 Co-occurrence of Hypertension and High Cholesterol
+
+```{r}
+#| label: highbp-highchol-joint
+#| fig.height: 8
+#| fig.width: 12
+
+diab |>
+  count(HighBP, HighChol) |>
+  mutate(prop = n / sum(n)) |>
+  ggplot(aes(x = HighBP, y = HighChol, fill = prop)) +
+  geom_tile(colour = "white", linewidth = 1.5) +
+  geom_text(
+    aes(label = percent(prop,accuracy = 0.1)),
+    size     = 6,
+    fontface = "bold",
+    colour   = "white"
+  ) +
+  labs(
+    title = "Joint prevalence of high blood pressure and high cholesterol",
+    x     = "High blood pressure",
+    y     = "High cholesterol"
+  ) +
+  theme(
+    legend.position = 'none'
+  )
+```
+
+> Approximately **40.2%** of the sample has neither high blood pressure
+> nor high cholesterol. The remaining **59.8%** have at least one of the
+> two conditions, indicating that cardiometabolic risk is common in this
+> population.
+>
+> The largest single elevated profile is **concurrent high blood
+> pressure and high cholesterol (25.5%)**, which exceeds either isolated
+> condition (17.4% BP only; 16.9% cholesterol only). This suggests
+> meaningful clustering rather than independent occurrence of the two
+> risk factors.
+>
+> Overall, hypertension and hypercholesterolaemia appear strongly
+> co-patterned, with dual elevation more common than either
+> single-condition state, reinforcing their joint role in cardiovascular
+> risk stratification.
+
+### 3.1.10 Stroke prevalence by blood pressure and cholesterol status
+
+```{r}
+#| label: stroke-bp-chol-prep
+#| include: false
+stroke_bpchol <- diab |>
+  count(HighBP, HighChol, Stroke) |>
+  group_by(HighBP, HighChol) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup() |>
+  filter(Stroke == "Yes") |>
+  mutate(
+    BP_Chol = paste0("BP: ", HighBP, "\nChol: ", HighChol)
+  )
+
+```
+
+```{r}
+#| label: stroke-bp-chol
+#| fig-width: 14
+#| fig-height: 7
+
+ggplot(stroke_bpchol,
+       aes(x = BP_Chol, y = prop, fill = prop)) +
+  geom_col(width = 0.55) +
+  geom_text(aes(label = percent(prop, accuracy = 0.1)),
+            vjust = -0.4, size = 5.5, fontface = "bold") +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1),
+                     limits = c(0, 0.12)) +
+  scale_fill_viridis_c(option = "C", direction = -1, guide = "none") +
+  labs(
+    title = "Stroke prevalence by blood pressure and cholesterol status",
+    x     = "Blood pressure / cholesterol profile",
+    y     = "Proportion with stroke history"
+  )
+```
+
+> Stroke prevalence increases monotonically across cardiovascular
+> profiles. The highest prevalence is observed among individuals with
+> both high blood pressure and high cholesterol, followed by isolated
+> high blood pressure, isolated high cholesterol, and neither condition.
+>
+> The gradient suggests cumulative vascular burden, with blood pressure
+> appearing more strongly associated with stroke than cholesterol alone.
+> Stroke thus reflects downstream risk concentration rather than
+> isolated cardiometabolic dysfunction.
+
+### 3.1.11 Joint co-occurrence profiles of high blood pressure, high cholesterol, and stroke
+
+```{r}
+#| label: joint-prep
+#| include: false
+
+joint <- diab |>
+  summarise(
+    `HighBP & HighChol` = mean(HighBP == "High" & HighChol == "High"),
+    `HighBP & Stroke`   = mean(HighBP == "High" & Stroke   == "Yes"),
+    `HighChol & Stroke` = mean(HighChol == "High" & Stroke == "Yes"),
+    `HighBP only` = mean(HighBP == "High" & HighChol != "High" & Stroke != "Yes"),
+    `HighChol only`= mean(HighChol == "High" & HighBP != "High" & Stroke != "Yes"),
+    `Stroke only` = mean(Stroke == "Yes" & HighBP != "High" & HighChol != "High"),
+    `All three`= mean(HighBP == "High" & HighChol == "High" & Stroke == "Yes")
+  ) |>
+  pivot_longer(everything(), names_to = "Profile", values_to = "Proportion")
+
+max_prop <- max(joint$Proportion)
+```
+
+```{r}
+#| fig-height: 7
+#| fig-width: 14
+
+ggplot(joint, aes(x = reorder(Profile, Proportion), y = Proportion, fill = Proportion)) +
+  geom_col(width = 0.65) +
+  geom_text(
+    aes(label = percent(Proportion, accuracy = 0.1)),
+    hjust = -0.15,
+    size  = 4.5
+  ) +
+  coord_flip() +
+  scale_x_discrete(expand = expansion(mult = c(0.05, 0.05))) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, max_prop * 1.15)  
+  ) +
+  scale_fill_viridis_c(option = "D", direction = -1, guide = "none") +
+  labs(
+    title = "Co-occurrence profiles for HighBP, HighChol, and Stroke",
+    x     = NULL,
+    y     = "Proportion of full sample"
+  )
+```
+
+### 3.1.12 Association Strength - Cramér's V
+
+```{r}
+#| label: cvd-binary-indicators-prep
+#| include: false
+nondm_outcomes <- c("HighBP", "HighChol", "Stroke")
+pred_vars <- c("Diabetes","Age", "Sex", "Income", "Education",
+               "PhysActivity", "Smoker", "BMI_cat",
+               "DiffWalk", "HeartDiseaseorAttack",
+               "AnyHealthcare", "NoDocbcCost",
+               "GenHlth", "HvyAlcoholConsump")
+
+diab_cv <- diab |>
+  mutate(BMI_cat = cut(BMI,
+                       breaks = c(0, 18.5, 25, 30, Inf),
+                       labels = c("Underweight", "Normal",
+                                  "Overweight", "Obese"),
+                       right  = FALSE))
+
+cv_nondm <- map_dfr(nondm_outcomes, function(outcome) {
+  map_dfr(pred_vars, function(pred) {
+    v <- cramerV(table(diab_cv[[outcome]], diab_cv[[pred]]))
+    tibble(Outcome = outcome, Predictor = pred, CramersV = as.numeric(v))
+  })
+}) |>
+  mutate(
+    Outcome = recode(Outcome,
+                     HighBP   = "High Blood Pressure",
+                     HighChol = "High Cholesterol",
+                     Stroke   = "Stroke")
+  )
+```
+
+```{r}
+#| label: cvd-binary-indicators
+#| fig-height: 9
+#| fig-width: 14
+ggplot(cv_nondm,
+       aes(x = reorder(Predictor, CramersV),
+           y = CramersV,
+           fill = Outcome)) +
+  geom_col(position = position_dodge(width = 0.75), width = 0.7) +
+  geom_text(aes(label = round(CramersV, 2)),
+            position = position_dodge(width = 0.75),
+            hjust = -0.1, size = 3.2) +
+  coord_flip() +
+  expand_limits(x = max(cv_nondm$CramersV) + 0.03) +
+  scale_fill_manual(values = c(
+    "High Blood Pressure" = "#2c7bb6",
+    "High Cholesterol"    = "#f46d43",
+    "Stroke"              = "#1a9641"
+  )) +
+  scale_y_continuous(limits = c(0, 0.45)) +
+  labs(
+    title = "Association strength with non-diabetes outcomes (Cramér's V)",
+    x     = NULL,
+    y     = "Cramér's V",
+    fill  = "Outcome"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+> This chart highlights how different risk factors weigh against
+> cardiovascular outcomes using **Cramér’s V** (a measure of association
+> where higher values indicate a stronger relationship).
+>
+> The data reveals two distinct "profiles" of disease:
+>
+> 1.  **Metabolic & Age-Driven (High BP & Cholesterol)**
+>
+> Hypertension and High Cholesterol are primarily driven by **systemic,
+> long-term factors**.
+>
+> -   **Primary Drivers:** **Age** ($V \approx 0.35$) and **General
+>     Health** ($V \approx 0.30$) are the strongest predictors.
+>
+> -   **Secondary Drivers:** Strong links to **Diabetes** and **BMI**,
+>     suggesting these are markers of general metabolic decline.
+>
+> -   **Takeaway:** These conditions follow a broad, population-wide
+>     risk gradient shaped by getting older and overall physical state.
+>
+> 2.  **Clinical & Pathological (Stroke)**
+>
+> Stroke follows a different logic, focusing more on **existing damage**
+> than just age.
+>
+> -   **Primary Drivers:** **Prior Heart Disease** ($V \approx  0.20$),
+>     **General Health** ($V \approx 0.19$), and **Walking Difficulty**
+>     ($V \approx 0.18$).
+>
+> -   **Key Difference:** Age is significantly less dominant here than
+>     it is for Blood Pressure. BMI has almost no direct association
+>     with Stroke in this specific view.
+>
+> -   **Takeaway:** Stroke appears as a "clinical endpoint", it is most
+>     strongly associated with patients who already show signs of
+>     cardiovascular failure or physical impairment.
+
+|                         |                         |                       |
+|-------------------------|-------------------------|-----------------------|
+| **Outcome**             | **Strongest Predictor** | **Second Predictor**  |
+| **High Blood Pressure** | Age (0.35)              | General Health (0.30) |
+| **High Cholesterol**    | Age (0.29)              | General Health (0.21) |
+| **Stroke**              | Heart Disease (0.20)    | General Health (0.19) |
+
+### 3.1.13 Summary of Key Findings
+
+Section 3.1 establishes that cardiovascular risk in this dataset is
+structured along three primary axes: **age, socioeconomic position, and
+cardiometabolic clustering**.
+
+First, **age is the dominant organising factor**. High blood pressure
+and high cholesterol rise steadily from midlife onward, while stroke is
+far more sharply concentrated in older age groups. Stroke appears less
+as a gradual condition and more as a late-stage vascular outcome.
+
+Second, a **clear and consistent socioeconomic gradient** is evident
+across all three outcomes. Lower education and lower income strata show
+substantially higher crude prevalence, with monotonic declines across
+both dimensions. Although partly influenced by age composition, the
+two-dimensional gradient suggests an independent structural role for
+socioeconomic position.
+
+Third, **cardiometabolic conditions cluster rather than occur
+independently**. Dual high blood pressure and high cholesterol (25.5%)
+exceed either isolated condition, and stroke prevalence increases
+monotonically across BP/cholesterol profiles, peaking in the dual-high
+group. This supports a cumulative vascular burden framework.
+
+Fourth, **obesity strongly structures hypertension and cholesterol but
+not stroke**, reinforcing the interpretation of BP and cholesterol as
+intermediate metabolic states. Stroke instead aligns more strongly with
+prior heart disease, general health, and walking difficulty.
+
+Finally, association analyses (Cramér’s V) reveal two distinct disease
+profiles:
+
+-   **Hypertension and cholesterol** are predominantly age and
+    general-health driven.
+
+-   **Stroke** is more closely associated with established
+    cardiovascular pathology and functional impairment.
+
+Overall, Section 3.1 demonstrates that cardiovascular outcomes in this
+dataset are not randomly distributed but follow coherent demographic,
+socioeconomic, and pathological structures. These findings provide the
+empirical foundation for the modelling strategy developed in Section 4.
+
+### 3.1.14 Implications for Modelling
+
+The exploratory analysis of cardiometabolic outcomes suggests several
+considerations for subsequent modelling. First, the strong accumulation
+pattern observed across cardiometabolic risk factors indicates that
+lifestyle and metabolic variables such as obesity, smoking, physical
+inactivity, and diabetes are likely to act as key predictors of
+cardiovascular outcomes. Second, the association strength analysis shows
+that demographic and health-status variables—particularly age and
+self-rated general health—have the strongest relationships with high
+blood pressure and high cholesterol, indicating that these variables
+should be prioritised in predictive models.
+
+For stroke, the strongest associations appear with prior cardiovascular
+disease history, poorer general health, and functional limitation
+(difficulty walking), suggesting that stroke risk may be more closely
+linked to underlying health status and comorbidity than to behavioural
+factors alone. Finally, the relatively low prevalence of stroke compared
+with hypertension and hypercholesterolaemia suggests that models
+predicting stroke may face class imbalance and may require approaches
+suitable for rare outcomes.
+
+Overall, the EDA indicates that **demographic factors, general health
+status, and cardiometabolic risk profiles** are likely to be central
+components of the modelling framework used to investigate cardiovascular
+outcomes.
+
+## 3.2 Patterns and determinants of mental health burden
+
+This section examines the distribution and key correlates of **mental
+health burden**, measured as the number of mentally unhealthy days
+reported in the past 30 days. The analysis explores how mental health
+burden varies across demographic, socioeconomic, and health-related
+factors, including age, physical health, and lifestyle behaviours. By
+identifying systematic patterns in mental health outcomes, this section
+aims to highlight the factors most strongly associated with elevated
+psychological distress in the population.
+
+### 3.2.1 Distribution of mentally unhealthy days in the past 30 days
+
+```{r}
+#| label: mentlhlth-distribution
+#| fig-height: 6
+#| fig-width: 14
+ggplot(diab, aes(x = MentHlth)) +
+  geom_histogram(
+    binwidth = 1,
+    boundary = 0,
+    fill = "steelblue",
+    colour = "black"
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, 30, by = 5),
+    limits = c(0, 30)
+  ) +
+  scale_y_continuous(
+    labels = label_number(scale = 1e-3, suffix = "K"),
+    breaks = seq(0,200000,by = 25000)
+  ) +
+  labs(
+    title = "Distribution of mentally unhealthy days in the past 30 days",
+    x = "Number of mentally unhealthy days",
+    y = "Frequency") 
+```
+
+> The distribution of mentally unhealthy days is **highly
+> right-skewed**, with a very large proportion of respondents reporting
+> **zero mentally unhealthy days in the past month**. Frequencies
+> decline sharply as the number of unhealthy days increases, producing a
+> long right tail that extends toward the upper bound of 30 days. This
+> pattern indicates that while most individuals report little or no
+> recent mental health burden, a smaller subset experiences **frequent
+> or persistent distress**.
+>
+> The distribution also shows evidence of **excess zeros and strong
+> dispersion**, with the spike at zero far exceeding the frequencies of
+> neighbouring values. Such a structure suggests that standard linear
+> modelling would be inappropriate, and motivates the use of
+> **count-based models**, potentially including **zero-inflated or
+> overdispersed models (e.g., Poisson or zero-inflated negative
+> binomial)** when analysing mental health burden as an outcome in
+> subsequent modelling.
+
+### 3.2.3 Mental Health Burden by Income and Sex
+
+```{r}
+#| label: mental-health-income
+#| fig.height: 7
+#| fig.width: 14
+diab |>
+  mutate(HighMH = MentHlth >= 14) |>
+  group_by(Income, Sex) |>
+  summarise(prop_high = mean(HighMH), .groups = "drop") |>
+  
+  ggplot(aes(x = Income, y = prop_high, fill = Sex)) +
+  geom_col(
+    position = position_dodge(width = 0.75),
+    width = 0.7,
+    colour = "black",
+    linewidth = 0.2
+  ) +
+  geom_text(
+    aes(label = percent(prop_high, accuracy = 1)),
+    position = position_dodge(width = 0.9),
+    vjust = -0.3, size = 4) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, NA)
+  ) +
+  scale_fill_manual(
+    values = pal_sex
+  ) +
+  labs(
+    title = "Prevalence of high mental health burden (≥14 days) by income and sex",
+    x     = "Household income",
+    y     = "Proportion with ≥14 mentally unhealthy days",
+    fill  = "Sex"
+  )
+```
+
+> A clear socioeconomic gradient is evident in the prevalence of high
+> mental health burden. The proportion of respondents reporting ≥14
+> mentally unhealthy days declines steadily as household income
+> increases, indicating that individuals in lower-income groups
+> experience substantially higher levels of psychological distress. In
+> the lowest income category (\<\$10k), roughly 28% of females and 26%
+> of males report high mental health burden, compared with only 6% and
+> 4% respectively in the highest income group (\$75k+).
+>
+> Across all income categories, females consistently report higher
+> prevalence than males, although the difference between sexes is modest
+> relative to the overall income gradient. These results suggest that
+> socioeconomic position is a strong determinant of mental health
+> burden, with financial disadvantage associated with markedly higher
+> levels of frequent psychological distress. (Money doesn't buy
+> happiness :) )
+
+### 3.2.3 Mental Health Burden by Educatioand Sex
+
+```{r}
+#| label: mental-health-education
+#| fig.height: 7
+#| fig.width: 14
+diab |>
+  mutate(HighMH = MentHlth >= 14) |>
+  group_by(Education, Sex) |>
+  summarise(prop_high = mean(HighMH), .groups = "drop") |>
+  
+  ggplot(aes(x = Education, y = prop_high, fill = Sex)) +
+  geom_col(
+    position = position_dodge(width = 0.75),
+    width = 0.7,
+    colour = "black",
+    linewidth = 0.2
+  ) +
+  geom_text(
+    aes(label = percent(prop_high, accuracy = 1)),
+    position = position_dodge(width = 0.9),
+    vjust = -0.3, size = 4) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, NA)
+  ) +
+  scale_fill_manual(
+    values = pal_sex
+  ) +
+  labs(
+    title = "Prevalence of high mental health burden (≥14 days) by income and sex",
+    x     = "Household income",
+    y     = "Proportion with ≥14 mentally unhealthy days",
+    fill  = "Sex"
+  ) +
+  theme(axis.text.x = element_text(angle = 15, hjust = 1))
+```
+
+> A clear educational gradient is visible in the prevalence of high
+> mental health burden. Individuals with lower levels of educational
+> attainment report substantially higher proportions of ≥14 mentally
+> unhealthy days compared with those with higher education. For example,
+> among respondents with kindergarten or less education, approximately
+> 22% report high mental health burden, whereas this proportion declines
+> to around 8% for females and 5% for males among college graduates.
+>
+> Across all education categories, females consistently report higher
+> levels of mental health burden than males, although the difference
+> between sexes is relatively modest compared with the overall education
+> gradient. The steady decline in prevalence with increasing educational
+> attainment suggests that socioeconomic resources and opportunities
+> associated with education may play an important role in mental health
+> outcomes.
+>
+> Overall, the figure indicates that lower educational attainment is
+> associated with substantially higher levels of frequent psychological
+> distress, reinforcing the broader pattern of socioeconomic
+> inequalities in mental health observed in the income analysis.
+
+### 3.2.4 Mental Health Burden by Age Group and Sex
+
+```{r}
+#| label: mental-health-age-lollipop
+#| fig.height: 7
+#| fig.width: 14
+
+
+mh_age_sex <- diab |>
+  group_by(Age, Sex) |>
+  summarise(mean_mh = mean(MentHlth, na.rm = TRUE), .groups = "drop")
+
+pos_dodge <- position_dodge(width = 0.6)
+
+ggplot(mh_age_sex, aes(x = Age, y = mean_mh, colour = Sex)) +
+  geom_linerange(
+    aes(ymin = 0, ymax = mean_mh),
+    position = pos_dodge,
+    linewidth = 1
+  ) +
+  geom_point(
+    position = pos_dodge,
+    size = 3.8
+  ) +
+  scale_y_continuous(
+    limits = c(0, NA),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  scale_colour_manual(
+    values = pal_sex
+  ) +
+  labs(
+    title  = "Mean mentally unhealthy days by age group and sex",
+    x      = "Age group",
+    y      = "Mean mentally unhealthy days (past 30 days)",
+    colour = "Sex"
+  ) 
+```
+
+> Mean mentally unhealthy days are higher among women than men in every
+> age group. The difference is most visible in younger and middle
+> adulthood, where women report roughly 1–2 more days on average than
+> men.
+>
+> Across age, the pattern is not monotonic. Mean days are relatively
+> high in early adulthood, remain similar through midlife, and then
+> decline progressively after around age 60 for both sexes. The lowest
+> averages are observed in the oldest age groups.
+
+### 3.2.5 Joint Distribution of Mental and Physical Health Burden by Sex
+
+```{r}
+#| label: menth-physh-hexbin
+#| fig.height: 7
+#| fig.width: 14
+ggplot(diab, aes(x = MentHlth, y = PhysHlth)) +
+  geom_hex(bins = 30) +
+  scale_fill_viridis_c(option = "magma", name = "Count", trans = "log10") +
+  facet_wrap(~ Sex, nrow = 1) +
+  labs(
+    title = "Joint distribution of mentally and physically unhealthy days by sex",
+    x     = "Mentally unhealthy days (past 30)",
+    y     = "Physically unhealthy days (past 30)"
+  )
+```
+
+> In both panels, the highest concentration of observations occurs near
+> zero mentally and physically unhealthy days. Density decreases as
+> values increase along either axis, and combinations of simultaneously
+> high mental and physical burden are relatively sparse.
+>
+> There is visible clustering along diagonal regions, indicating that
+> higher numbers of mentally unhealthy days tend to coincide with higher
+> numbers of physically unhealthy days rather than being concentrated
+> along a single axis.
+>
+> The overall distributional shape is similar for women and men, with
+> broadly comparable density patterns across low, moderate, and higher
+> values.
+
+### 3.2.6 Prevalence of High Mental Health Burden by Physical and Cardiometabolic indicators
+
+```{r}
+#| include: false
+diab_mh_phys <- diab |>
+  mutate(
+    HighMH = factor(if_else(MentHlth >= 14, "Yes", "No"),
+                    levels = c("No", "Yes")),
+    
+    Obese = factor(if_else(BMI >= 30, "Yes", "No"),
+                    levels = c("No", "Yes")),
+    
+    BadPhysHlth = factor(if_else(PhysHlth >= 14, "Yes", "No"),
+                    levels = c("No", "Yes")),
+    
+    Diabetes = factor(if_else(Diabetes == "Diabetes", "Yes", "No"),
+                        levels = c("No", "Yes")),
+    
+    HighBP = factor(if_else(HighBP == "High", "Yes", "No"),
+                        levels = c("No", "Yes")),
+    
+    HighChol = factor(if_else(HighChol == "High", "Yes", "No"),
+                        levels = c("No", "Yes"))
+  ) |>
+  select(
+    HighMH,
+    Obese,
+    PhysActivity,
+    DiffWalk,
+    BadPhysHlth,
+    Diabetes,
+    HeartDiseaseorAttack,
+    HighBP,
+    HighChol
+  ) |>
+  pivot_longer(
+    cols = -HighMH,
+    names_to = "Indicator",
+    values_to = "Status"
+  ) |> 
+  count(Indicator, Status, HighMH) |>
+  group_by(Indicator, Status) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup() |>
+  filter(HighMH == "Yes")
+```
+
+```{r}
+#| fig.height: 7
+#| fig.width: 14
+
+diab_mh_phys |>
+  ggplot(aes(x = Status, y = prop, fill = Status)) +
+  geom_col(width = 0.7, show.legend = FALSE) +
+  geom_text(
+    aes(label = percent(prop, accuracy = 1)),
+    vjust = -0.3,
+    size  = 3.3
+  ) +
+  facet_wrap(~ Indicator, nrow = 2, ncol = 4) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, NA),
+    expand = expansion(mult = c(0, 0.10))
+  ) +
+  scale_fill_manual(values = pal_binary) +
+  labs(
+    title = "Prevalence of high Mental Health Burden by Physical and Cardiometabolic Indicators",
+    x     = "Indicator status",
+    y     = "Proportion with ≥14 mentally unhealthy days"
+  )
+```
+
+> High mental health burden (≥14 mentally unhealthy days) varies
+> substantially across physical and cardiometabolic indicators. The
+> strongest associations are observed for indicators of functional and
+> physical health limitations. Individuals reporting high physical
+> health burden (≥14 physically unhealthy days) show a markedly elevated
+> prevalence of high mental health burden ( ≈ 33%), compared with only
+> about 6% among those without high physical burden. A similarly large
+> difference appears for difficulty walking, where prevalence rises from
+> roughly 7% to 24%.
+>
+> Cardiometabolic conditions such as diabetes, heart disease or
+> myocardial infarction, high blood pressure, and high cholesterol are
+> also associated with higher levels of mental health burden, although
+> the magnitude of these differences is smaller. For example,
+> respondents with diabetes or heart disease exhibit prevalence around
+> 15%, compared with approximately 9% among those without these
+> conditions.
+>
+> Lifestyle factors show a mixed pattern. Obesity is associated with
+> moderately higher mental health burden (≈12% vs ≈8%), while physical
+> activity appears protective, with prevalence roughly halved among
+> individuals reporting recent physical activity ( ≈ 8%) compared with
+> those reporting none ( ≈16%).
+>
+> Overall, the results suggest that mental health burden is most
+> strongly linked with physical health limitations and functional
+> impairment, while cardiometabolic disease and lifestyle factors
+> exhibit weaker but still noticeable associations.
+
+### 3.2.7 Summary of Key Findings
+
+Several clear structural patterns emerge in the analysis of mental
+health burden. First, the distribution of mentally unhealthy days is
+highly right-skewed, with a large concentration at zero and a long tail
+toward higher values. This indicates substantial heterogeneity in
+psychological distress across the population and motivates the use of
+count-based models with potential zero inflation in subsequent
+modelling.
+
+Second, strong **socioeconomic gradients** are visible. The prevalence
+of high mental health burden declines consistently with increasing
+income and education, suggesting that socioeconomic disadvantage is
+associated with substantially higher levels of frequent psychological
+distress.
+
+Third, **demographic differences** are evident. Women report higher
+average numbers of mentally unhealthy days than men across all age
+groups, while mental health burden tends to decline gradually in older
+age groups after midlife.
+
+Fourth, mental and physical health burdens show **moderate
+co-occurrence**, with higher levels of mentally unhealthy days tending
+to coincide with higher levels of physically unhealthy days.
+
+Finally, mental health burden is **most strongly associated with
+indicators of physical limitation**, particularly poor physical health
+and difficulty walking. Cardiometabolic conditions such as diabetes,
+heart disease, hypertension, and high cholesterol also show positive
+associations with mental health burden, although these relationships are
+weaker than those linked to functional impairment.
+
+Overall, the results suggest that mental health burden in this
+population is structured primarily by **socioeconomic position, physical
+health status, and functional limitation**, providing a clear empirical
+basis for the modelling analyses developed in later sections.
+
+### 3.2.8 Implications for Modelling
+
+The exploratory analysis provides several insights relevant for model
+development. The distribution of mentally unhealthy days is highly
+right-skewed with a substantial concentration at zero, suggesting that
+standard linear modelling would be inappropriate and motivating the use
+of count-based models such as Poisson or negative binomial regression,
+potentially with zero-inflation.
+
+Socioeconomic gradients observed across income and education indicate
+that demographic and socioeconomic variables should be included as key
+predictors.
+
+Finally, the strong co-occurrence between mental and physical health
+indicators suggests that physical health variables such as poor physical
+health days, difficulty walking, and chronic disease indicators may play
+an important explanatory role in modelling mental health burden.
+
+### 3.x.x Spearman Correlation Heatmap: Continuous and Ordinal Variables
+
+```{r}
+#| label: spearman-prep
+#| include: false
+corr_vars <- diab |>
+  transmute(
+    BMI,
+    MentHlth,
+    PhysHlth,
+    GenHlth   = as.integer(GenHlth),
+    Age       = as.integer(Age),
+    Education = as.integer(Education),
+    Income    = as.integer(Income)
+  )
+
+spear_mat <- cor(
+  corr_vars,
+  method = "spearman",
+  use    = "pairwise.complete.obs"
+)
+
+spear_tidy <- spear_mat |>
+  as.data.frame() |>
+  rownames_to_column("Var1") |>
+  pivot_longer(
+    cols      = -Var1,
+    names_to  = "Var2",
+    values_to = "rho"
+  ) |>
+  mutate(
+    Var1 = factor(Var1, levels = colnames(spear_mat)),
+    Var2 = factor(Var2, levels = colnames(spear_mat))
+  )
+```
+
+```{r}
+#| label: spearman-heatmap
+#| fig.height: 7
+#| fig.width: 10
+
+ggplot(spear_tidy, aes(x = Var1, y = Var2, fill = rho)) +
+  geom_tile(colour = "white") +
+  geom_text(
+    aes(label = sprintf("%.2f", rho)),
+    size   = 3.5,
+    colour = "black"
+  ) +
+  scale_fill_gradient2(
+    low      = "#2166AC",
+    mid      = "white",
+    high     = "#D6604D",
+    midpoint = 0,
+    limits   = c(-1, 1),
+    name     = "Spearman's \u03c1"
+  ) +
+  labs(
+    title = "Spearman rank correlations among continuous and ordinal variables",
+    x     = NULL,
+    y     = NULL
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 40, hjust = 1),
+    axis.text.y = element_text(hjust = 1)
+  )
+```
+
+> The Spearman rank correlations indicate mostly **weak to moderate**
+> monotonic associations among the continuous and ordinal variables.
+>
+> -   The strongest positive correlations are between **GenHlth and
+>     PhysHlth** (ρ ≈ 0.45) and between **Education and Income** (ρ ≈
+>     0.45), suggesting moderate monotonic relationships in both cases.
+>
+> -   **GenHlth** is moderately **negatively** correlated with
+>     **Income** (ρ ≈ −0.35) and **Education** (ρ ≈ −0.28). Because
+>     higher GenHlth scores denote poorer health, these negative
+>     correlations imply that higher income and education are associated
+>     with **better** self-rated health.
+>
+> -   **MentHlth** and **PhysHlth** show a modest positive association
+>     (ρ ≈ 0.31), consistent with some co-occurrence of mental and
+>     physical health burden.
+>
+> -   Most other pairwise correlations are small (\|ρ\| \< 0.3). In
+>     particular, **BMI** and **Age** have only weak associations with
+>     the other variables in this set.
+>
+> Overall, the correlation matrix does **not** indicate problematic
+> collinearity: apart from a few moderate associations
+> (GenHlth–PhysHlth, Education–Income), most variables are only weakly
+> related. This supports their concurrent use as predictors in
+> multivariable models, subject to routine multicollinearity checks.
+
+### 3.x.x Cramér's V Association Heatmap: Binary Clinical and Lifestyle Variables
+
+To complement the Spearman correlation heatmap for continuous/ordinal
+variables, the strength of pairwise associations among all binary
+clinical and lifestyle indicators is quantified using Cramér's V. This
+symmetric measure summarises the association in each 2×2 contingency
+table on a 0–1 scale, without assuming any directionality. Diabetes
+status is deliberately excluded.
+
+Together, Sections 3.14 and 3.15 establish the correlation structure
+among all key variables, identifying which predictors are inter-related
+and justifying the need for multivariable adjustment in all subsequent
+models.
+
+```{r}
+#| label: cramer-prep
+#| include: false
+bin_vars <- c("HighBP", "HighChol", "Smoker", "Stroke",
+              "HeartDiseaseorAttack", "PhysActivity",
+              "HvyAlcoholConsump", "DiffWalk",
+              "AnyHealthcare", "NoDocbcCost","Diabetes")
+
+cv_mat <- outer(
+  bin_vars, bin_vars,
+  Vectorize(function(a, b) {
+    cramerV(table(diab[[a]], diab[[b]]))
+  })
+)
+dimnames(cv_mat) <- list(bin_vars, bin_vars)
+
+cv_tidy <- cv_mat |>
+  as.data.frame() |>
+  rownames_to_column("Var1") |>
+  pivot_longer(-Var1, names_to = "Var2", values_to = "V") |>
+  mutate(
+    Var1 = factor(Var1, levels = bin_vars),
+    Var2 = factor(Var2, levels = bin_vars)
+  )
+```
+
+```{r}
+#| label: cramerv-heatmap
+#| fig.height: 7
+#| fig.width: 10
+
+ggplot(cv_tidy, aes(x = Var1, y = Var2, fill = V)) +
+  geom_tile(colour = "white") +
+  geom_text(
+    aes(label = sprintf("%.2f", V)),
+    size   = 3.8,
+    colour = "black"
+  ) +
+  scale_fill_gradient2(
+    low       = "white",
+    high     = "#D6604D",
+    midpoint = 0,
+    limits   = c(0, 1),
+    name     = "Cramér's V"
+  ) +
+  labs(
+    title = "Cramér's V among binary clinical and lifestyle variables",
+    x = NULL,
+    y = NULL) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+> The Cramér’s V matrix indicates that most pairwise associations among
+> the binary clinical and lifestyle variables are **weak**, with the
+> majority of values below 0.20.
+>
+> The strongest association is between **HighBP and HighChol** (V ≈
+> 0.30), representing a moderate relationship relative to the rest of
+> the matrix. This aligns with known clustering of cardiovascular risk
+> factors.
+>
+> Other comparatively larger associations include:
+>
+> -   **PhysActivity and DiffWalk** (V ≈ 0.25)
+>
+> -   **HighBP and DiffWalk** (V ≈ 0.22)
+>
+> -   **HighBP and HeartDiseaseorAttack** (V ≈ 0.21)
+>
+> -   **Stroke and HeartDiseaseorAttack** (V ≈ 0.20)
+>
+> These moderate associations are clinically plausible and reflect
+> shared cardiovascular or functional impairment pathways.
+>
+> Lifestyle indicators such as **Smoker** and **HvyAlcoholConsump**
+> exhibit generally weak associations with other variables (typically V
+> \< 0.15). Healthcare access indicators (**AnyHealthcare**,
+> **NoDocbcCost**) also show minimal association with most clinical
+> variables.
+>
+> **Analytical Implication**
+>
+> The matrix does not suggest substantial redundancy among the binary
+> predictors. Aside from a small number of moderate associations
+> (primarily within cardiovascular-related variables), most
+> relationships are weak.
+>
+> This supports inclusion of these variables simultaneously in
+> multivariable models, with routine collinearity diagnostics (e.g., VIF
+> or condition indices) as a precaution rather than an expected issue.
+
+# 4. Refined Research Questions
+
+## RQ1: Multidomain Determinants and Prediction of Diabetes Status
+
+**Outcome Variable:** *Diabetes — Multiclass Outcome*
+
+**Research Question**
+
+> ***To what extent can diabetes status be explained and predicted using
+> demographic, socioeconomic, behavioural, and cardiometabolic factors,
+> and which predictors contribute most strongly to distinguishing
+> between no diabetes, prediabetes, and diabetes?***
+
+**Rationale**
+
+Exploratory analysis of the CDC Diabetes Health Indicators dataset
+indicates that diabetes status is structured by multiple interacting
+determinants. Section 3.2.1 demonstrated a strong **age gradient**, with
+prediabetes and diabetes concentrated in older age groups, suggesting
+that demographic factors must be accounted for when evaluating other
+risk indicators.
+
+Cardiometabolic clustering was evident across several visualisations.
+The joint distribution of **high blood pressure and high cholesterol**
+increased substantially across diabetes categories, while the
+risk-factor accumulation plot showed a clear gradient in which diabetes
+prevalence rises with the number of cardiometabolic risk indicators.
+This pattern aligns with established evidence linking obesity,
+hypertension, and dyslipidaemia to type 2 diabetes risk (Ismail et al.,
+2021).
+
+Behavioural factors also exhibited variation across diabetes categories.
+Physical activity levels tended to decline with worsening diabetes
+status, while smoking and alcohol consumption showed weaker separation.
+Because behavioural variables are potentially modifiable, evaluating
+their contribution to diabetes risk is relevant for prevention
+strategies (Aune et al., 2015).
+
+Finally, socioeconomic gradients were visible in the education–income
+distribution, where diabetes prevalence was higher among lower
+socioeconomic groups. These patterns suggest that diabetes risk is
+embedded within broader social determinants of health, which influence
+exposure to risk factors and access to care (Hill-Briggs et al., 2021).
+
+Together, these findings motivate a multivariable modelling approach to
+estimate adjusted associations and evaluate predictive performance
+across diabetes categories.
+
+*'EDI Discussed in Task1'*
+
+## RQ2: The Impact of Socioeconomic Moderation on Cardiovascular Risk
+
+**Outcome Variables:** *HeartDiseaseorAttack* — binary outcome
+
+**Research Question**
+
+> ***To what extent do socioeconomic determinants, specifically income
+> and education, moderate the impact of clinical risk factors on the
+> prevalence of heart disease, and can the capture of complex feature
+> interactions provide superior predictive insights compared to
+> traditional additive assumptions?***
+
+**Rationale**
+
+Exploratory analysis identified distinct gradients in cardiovascular
+health, where the prevalence of heart disease increases substantially
+across older age groups and among individuals with specific clinical
+markers. While factors such as high blood pressure, elevated
+cholesterol, and body mass index are established universal risk
+indicators, their influence is rarely isolated. In real-world clinical
+contexts, these physiological markers exist within a broader
+socioeconomic framework, suggesting that the "weight" of a clinical risk
+factor may be compounded or mitigated by an individual's access to
+resources, environmental stressors, and educational background (Roth et
+al., 2024).
+
+Traditional analytical frameworks often rely on the assumption that
+risks are simply additive, yet biological and social systems frequently
+exhibit synergistic effects where the presence of one factor
+significantly alters the impact of another. For example, the
+cardiovascular strain associated with high BMI may be intensified in
+lower-income brackets due to limited access to preventive care or higher
+cumulative stress (Collins et al., 2023). By investigating these
+conditional relationships, this inquiry shifts the focus from simple
+binary classification toward a more nuanced understanding of risk
+stratification. This approach allows for the identification of specific
+"risk profiles," which are intersections of clinical and social data
+that might be overlooked by frameworks that fail to account for
+higher-order interactions.
+
+**EDI and Ethical Considerations**
+
+The application of predictive modelling in healthcare necessitates a
+rigorous focus on transparency and equity. A primary ethical concern is
+the risk of "algorithmic bias," where models may inadvertently penalise
+or misrepresent specific subgroups if demographic variables are treated
+in isolation. By specifically investigating socioeconomic moderators,
+this research aims to move beyond a "one-size-fits-all" predictive
+approach, ensuring that the influence of income and education is
+explicitly understood rather than buried as "noise" within the data.
+
+Furthermore, the interpretability of these complex interactions is a
+matter of distributive justice, as clinicians must be able to explain
+risk assessments to patients in a way that is both accurate and
+contextually relevant. By quantifying how socioeconomic status shifts
+the predictive significance of clinical markers, this study helps
+identify whether existing healthcare inequalities are being reinforced
+or challenged by the data. Ensuring that the model identifies these
+non-linear patterns is essential for developing more equitable
+preventative strategies that reflect the lived realities of diverse
+population groups (Liu et al., 2023).
+
+```{mermaid}
+%%| label: fig-framework
+%%| fig-cap: "Conceptual framework illustrating the moderating effect of SES on clinical risk factors."
+graph TD
+    subgraph SES_Layer [Socioeconomic Context]
+        Income[Income Level]
+        Edu[Education]
+    end
+    
+    subgraph Clinical_Layer [Clinical Determinants]
+        BMI[BMI]
+        BP[Blood Pressure]
+        Chol[Cholesterol]
+    end
+    
+    Outcome(Heart Disease Risk)
+    
+    SES_Layer -.->|Moderates| Clinical_Layer
+    Clinical_Layer --> Outcome
+    SES_Layer --> Outcome
+```
+
+## RQ3: Socioeconomic and Lifestyle Determinants of Mental Health Burden
+
+**Outcome Variable:** *MentHlth* — number of self-reported mentally
+unhealthy days in the past 30 days (0–30)
+
+**Research Question**
+
+> *To what extent do income, education, physical activity, smoking, and
+> heavy alcohol consumption predict the number of mentally unhealthy
+> days reported in the past 30 days, and does the association between
+> physical activity and mental health burden differ across income
+> groups?*
+
+**Rationale**
+
+The *MentHlth* variable represents a count of mentally unhealthy days
+within the past month (0–30). Exploratory analysis revealed a strongly
+right-skewed distribution with a large concentration of zero values,
+indicating that many respondents report no mentally unhealthy days while
+a smaller subset experience substantial burden. Such distributions
+violate assumptions of linear models and often produce overdispersion
+and excess zeros, making standard Poisson or logistic approaches
+unsuitable.
+
+A Zero-Inflated Negative Binomial (ZINB) model is therefore appropriate
+because it separates two processes:
+
+1.  the probability that individuals experience no mental health burden,
+    and
+
+2.  the frequency of mentally unhealthy days among those who do report
+    burden (Rust et al., 2014; Liu et al., 2023).
+
+The EDA further revealed clear socioeconomic gradients in mental health
+outcomes. Respondents in the lowest income categories exhibited
+substantially higher prevalence of high mental health burden compared
+with those in higher income groups. Physical activity also showed a
+consistent inverse relationship with mentally unhealthy days, suggesting
+potential behavioural protection.
+
+These patterns motivate a modelling approach that jointly evaluates
+socioeconomic position and lifestyle behaviours. In particular, testing
+an interaction between income and physical activity allows examination
+of whether the protective association of physical activity differs
+across socioeconomic strata.
+
+Prior research supports the relevance of these predictors. Socioeconomic
+disadvantage has been consistently linked with elevated risk of mental
+health disorders and poorer psychological well-being (Kessler et al.,
+2010), while analyses of BRFSS data have shown that ZINB regression
+provides an effective framework for modelling unhealthy-days indicators
+with excess zeros (Rust et al., 2014; Liu et al., 2023).
+
+**EDI / Ethical Considerations**
+
+Socioeconomic gradients in mental health outcomes raise important equity
+considerations. If income remains strongly associated with mental health
+burden after adjustment for behavioural factors, this suggests that
+structural determinants, such as economic insecurity and access to
+resources, play a major role in shaping mental health outcomes.
+Understanding these relationships can inform more equitable public
+health strategies that address structural conditions rather than
+focusing solely on individual behaviour.
+
+# 6. Multidomain Determinants and Prediction of Diabetes Status
+
+### 6.1 Modelling Objective
+
+This section addresses the following research question:
+
+> ***To what extent can diabetes status be explained and predicted using
+> demographic, socioeconomic, behavioural, and cardiometabolic factors,
+> and which predictors contribute most strongly to distinguishing
+> between no diabetes, prediabetes, and diabetes?***
+
+The objective is twofold:
+
+1.  **Explanatory** – to estimate the adjusted associations between
+    predictor domains and diabetes status.
+
+2.  **Predictive** – to compare the classification performance of
+    statistical and machine learning models.
+
+Diabetes status is treated as a **multiclass outcome** (No diabetes /
+Prediabetes / Diabetes), requiring modelling approaches suitable for
+nominal categorical outcomes.
+
+### 6.2. Outcome Variable
+
+The dependent variable is **diabetes status**, categorised into:
+
+-   **No diabetes**
+
+-   **Prediabetes**
+
+-   **Diabetes.**
+
+Exploratory analysis demonstrated class imbalance, with the majority of
+respondents in the no-diabetes category and substantially smaller
+proportions in the prediabetes and diabetes groups. This imbalance is
+accounted for in model training and evaluation.
+
+## 6.3 Training and Validation
+
+### 6.3.1 **Data Partitioning and Resampling:**
+
+The dataset is partitioned into a 75% training set and a 25% testing set
+using stratified sampling on diabetes status. Within the training set,
+5-fold stratified cross-validation is implemented to estimate model
+performance during development. The held-out test set is reserved for
+final evaluation to ensure unbiased performance assessment.
+
+```{r}
+set.seed(42)
+
+diabetes_split <- initial_split(
+  diab,
+  prop = 0.75,
+  strata = Diabetes
+)
+
+diab_train <- training(diabetes_split)
+diab_test  <- testing(diabetes_split)
+
+
+diabetes_folds <- vfold_cv(
+  diab_train,
+  v = 5,
+  strata = Diabetes
+)
+
+# Sanity checks
+diab_train |>  count(Diabetes) |> mutate(prop = n/sum(n))
+diab_test |> count(Diabetes) |>  mutate(prop = n/sum(n))
+
+```
+
+### 6.3.2 Recipe Definition and Preprocessing Strategy
+
+-   **Outcome specification** – Models `Diabetes` as a three-level
+    categorical outcome (No diabetes, Prediabetes, Diabetes).
+
+-   **Near-zero variance removal** – Removes predictors with minimal
+    variability to prevent instability and redundant information.
+
+-   **Ordinal scoring** – Converts ordered factors (`Age`, `Education`,
+    `Income`, `GenHlth`) into numeric scores while preserving their
+    natural ranking. This introduces an assumption of approximately
+    equal spacing between adjacent categories; however, the primary
+    objective is to retain monotonic structure in a computationally
+    efficient representation suitable for both parametric and tree-based
+    models.
+
+-   **Dummy encoding** – Transforms remaining nominal predictors into
+    binary indicator variables suitable for modelling.
+
+-   **Normalization** – Standardizes numeric predictors (mean = 0, sd
+    = 1) to improve optimisation and comparability across models.
+
+-   **SMOTE balancing** – Applies synthetic oversampling to minority
+    classes within resampling folds to mitigate severe class imbalance.
+
+### 6.3.2 Handling Class Imbalance
+
+Cardiovascular events such as heart disease, heart attack, and stroke
+occur relatively infrequently within the dataset, resulting in a
+**highly imbalanced class distribution** where the majority of
+observations correspond to individuals without a reported event. Models
+trained on such imbalanced data may become biased toward predicting the
+majority class, leading to poor sensitivity for identifying individuals
+who have experienced cardiovascular events.
+
+To mitigate this issue, **random undersampling** of the majority class
+is applied during model training. Undersampling reduces the number of
+non-event observations within the training data so that the event and
+non-event classes are more balanced. Because the dataset contains a
+large number of observations, removing a subset of majority-class
+instances does not substantially reduce the available information while
+significantly improving the model’s ability to learn patterns associated
+with the minority class.
+
+Importantly, undersampling is implemented **within the resampling folds
+of the training data only**. This ensures that the validation folds and
+the held-out test set retain the original class distribution, allowing
+model performance to be evaluated under realistic population conditions.
+
+```{r}
+#| label: recipie-making
+set.seed(42)
+
+rec_rq1 <- recipe(Diabetes ~ ., data = diab_train) |>
+  step_nzv(all_predictors()) |>
+  step_ordinalscore(Age, Education, Income, GenHlth) |>
+  step_dummy(all_nominal_predictors()) |>
+  step_normalize(BMI, MentHlth, PhysHlth) |>
+  step_smote(Diabetes, over_ratio = 0.5, seed = 42)
+
+print(rec_rq1)
+```
+
+### 6.3.3 Model Specification
+
+We now define the candidate models for RQ1 using the **tidymodels**
+framework.
+
+Each model is specified independently of preprocessing and will later be
+combined with the common recipe using **workflows** and **workflow
+sets**.
+
+|  |  |  |  |
+|----|----|----|----|
+| **Model** | **Type** | **Primary Function** | **Key Strengths** |
+| **Multinomial Logistic Regression** | Parametric | Linear Baseline | Interpretable log-odds; direct coefficient analysis. |
+| **Random Forest** | Ensemble (Bagging) | Non-linear Discovery | Captures complex interactions; robust to multicollinearity. |
+| **XGBoost** | Ensemble (Boosting) | Predictive Performance | High efficiency on tabular data; optimized for accuracy. |
+
+```{r}
+#| label: model-spec
+
+# Multinomial logistic regression
+mod_multinom <- 
+  multinom_reg() |> 
+  set_engine("nnet") |> 
+  set_mode("classification")
+
+# Random Forest
+mod_rf <- 
+  rand_forest(
+    trees = 256,
+    mtry  = tune(),
+    min_n = tune()
+  ) |> 
+  set_engine("ranger") |> 
+  set_mode("classification")
+
+# Gradient Boosted Trees
+mod_xgb <- 
+  boost_tree(
+    trees = 512,
+    tree_depth = tune(),
+    learn_rate = tune(),
+    loss_reduction = tune(),
+    mtry = tune(),
+    min_n = tune()
+  ) |> 
+  set_engine("xgboost") |> 
+  set_mode("classification")
+```
+
+### 6.3.4 Workflow Construction and Workflow Set Definition
+
+We now integrate:
+
+-   The **RQ1 preprocessing recipe**
+
+-   The **candidate model specifications**
+
+    using `workflow()` and `workflow_set()`.
+
+Each workflow represents one **model–preprocessing pair**.\
+The workflow set enables parallel evaluation of all candidate models
+under identical resampling conditions.
+
+```{r}
+#| label: wrkflw
+
+# Individual workflows 
+wf_multinom <-
+  workflow() |>
+  add_recipe(rec_rq1) |>
+  add_model(mod_multinom)
+
+wf_rf <-
+  workflow() |>
+  add_recipe(rec_rq1) |>
+  add_model(mod_rf)
+
+wf_xgb <-
+  workflow() |>
+  add_recipe(rec_rq1) |>
+  add_model(mod_xgb)
+```
+
+```{r}
+#| label: wrkflw-sets
+
+# Workflow set 
+wf_set_rq1 <-
+  workflow_set(
+    preproc = list(rq1_recipe = rec_rq1),
+    models  = list(
+      multinom = mod_multinom,
+      rf       = mod_rf,
+      xgb      = mod_xgb))
+```
+
+### 6.3.5 Hyperparameter Tuning
+
+**Metrics computed**
+
+Model performance is evaluated using multiple complementary metrics to
+account for class imbalance and provide a robust assessment of
+predictive performance:
+
+-   **Accuracy** – overall classification rate
+
+-   **Balanced Accuracy** – mean recall across classes, correcting for
+    class imbalance
+
+-   **Cohen’s Kappa** – agreement between predictions and observed
+    classes beyond chance
+
+-   **F1-score (macro)** – harmonic mean of precision and recall
+    averaged across classes
+
+-   **ROC-AUC (multiclass)** – ability of the model to discriminate
+    between diabetes categories
+
+```{r}
+#| label: metric-set
+metrics_diab <-
+  metric_set(
+    accuracy,
+    bal_accuracy,
+    kap,
+    f_meas,
+    roc_auc
+  )
+```
+
+We now estimate model performance using the 5-fold cross-validation
+object (`diab_folds`).
+
+-   Logistic regression → no tuning (baseline model)
+
+-   Random Forest → tune `mtry`, `min_n`
+
+-   XGBoost → tune depth, learning rate, regularisation, etc.
+
+Hyperparameter tuning was conducted using grid search across 5 candidate
+configurations for each model. This grid size provides a balance between
+exploration of the hyperparameter space and computational feasibility
+given the large dataset.
+
+```{r}
+#| label: hp-tune
+# set.seed(42)
+# ctrl <- control_grid(
+#   save_pred = TRUE,
+#   save_workflow = FALSE,
+#   verbose = TRUE
+# )
+# 
+# wf_set_rq1_fit <-
+#   wf_set_rq1 |>
+#   workflow_map(
+#     "tune_grid",
+#     resamples = diabetes_folds,
+#     grid = 10,
+#     metrics = metrics_diab,
+#     control = ctrl
+#     )
+
+wf_set_rq1_fit <- readRDS('wf_set_rq1_fit.rds')
+```
+
+```{r}
+#| include: false
+
+pretty_autoplot <- function(x, metric, ylab, title) {
+  autoplot(
+    x, 
+    metric = metric) +
+    labs(
+      title = title,
+      x = "Workflow rank (best → worst)",
+      y = ylab
+    ) +
+    scale_x_continuous(breaks = pretty_breaks(n = 6)) +
+    scale_y_continuous(labels = percent_format(accuracy = 0.1))
+}
+```
+
+```{r}
+#| label: eval-results
+#| fig-height: 10
+#| fig-width: 16
+
+m1 <- pretty_autoplot(
+  wf_set_rq1_fit, 
+  "roc_auc", 
+  "ROC–AUC (multiclass)", 
+  "Discrimination (ROC–AUC)")
+m2 <- pretty_autoplot(
+  wf_set_rq1_fit, 
+  "bal_accuracy", 
+  "Balanced accuracy", 
+  "Class-balanced accuracy")
+m3 <- pretty_autoplot(
+  wf_set_rq1_fit, 
+  "f_meas", 
+  "Macro F1-score", 
+  "Macro F1 (imbalance-aware)")
+m4 <- pretty_autoplot(wf_set_rq1_fit, "kap", "Cohen's kappa", "Agreement beyond chance")
+
+(m1 | m2) / (m3 | m4) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+**ROC–AUC.**\
+ROC–AUC measures a model’s ability to discriminate between the three
+diabetes categories across all possible classification thresholds. The
+highest ROC–AUC value is achieved by the **multinomial logistic
+regression model**, which appears as the top-ranked workflow in this
+metric. However, beyond this leading configuration, most of the
+remaining high-ranking workflows consist of **XGBoost and random forest
+models**, with values clustered between approximately 0.69 and 0.70.
+This indicates that while logistic regression achieves the single best
+ROC–AUC score, tree-based models provide similarly competitive
+discrimination across multiple configurations.
+
+**Balanced Accuracy.**\
+Balanced accuracy reflects the average recall across classes, giving
+equal importance to each diabetes category. The **multinomial logistic
+regression model again appears as the top-ranked workflow**, achieving
+the highest balanced accuracy among the candidate models. Several
+**XGBoost configurations follow closely**, while random forest models
+occupy the middle range of the ranking. Although performance differences
+are relatively modest, the results suggest that multiple model types are
+capable of achieving comparable class-balanced recall.
+
+**Macro F1 Score.**\
+Macro F1 was selected as the primary tuning metric because it balances
+precision and recall equally across classes and is therefore appropriate
+under class imbalance. In this panel, the **top-ranked workflows are
+clearly dominated by XGBoost models**, which achieve substantially
+higher macro F1 scores than the other model types. Random forest
+configurations perform considerably lower, and the multinomial logistic
+regression model appears further down the ranking. This pattern
+indicates that boosted trees are better able to balance precision and
+recall across the three diabetes categories.
+
+**Cohen’s Kappa.**\
+Cohen’s kappa measures agreement between predicted and observed
+classifications beyond chance. The highest kappa values are achieved by
+**XGBoost configurations**, which occupy several of the top-ranked
+positions in this panel. The multinomial logistic regression model
+appears among the higher-performing workflows but does not exceed the
+best boosted-tree configurations. Random forest models generally show
+lower kappa values and appear further down the ranking. Overall, this
+metric again indicates stronger agreement for boosted tree models
+compared with the other modelling approaches.
+
+### 6.3.6 Extract tuning results
+
+```{r}
+#| label: extarct
+# Extract tuning results
+rf_res  <- extract_workflow_set_result(wf_set_rq1_fit, "rq1_recipe_rf")
+xgb_res <- extract_workflow_set_result(wf_set_rq1_fit, "rq1_recipe_xgb")
+
+# Select best hyperparameters using Macro F1
+best_rf  <- select_best(rf_res, metric = "f_meas")
+best_xgb <- select_best(xgb_res, metric = "f_meas")
+
+# Extract workflows
+rf_wf       <- extract_workflow(wf_set_rq1_fit, "rq1_recipe_rf")
+xgb_wf      <- extract_workflow(wf_set_rq1_fit, "rq1_recipe_xgb")
+multinom_wf <- extract_workflow(wf_set_rq1_fit, "rq1_recipe_multinom")
+
+# Finalise tuned workflows
+rf_final_wf  <- finalize_workflow(rf_wf, best_rf)
+xgb_final_wf <- finalize_workflow(xgb_wf, best_xgb)
+
+# Multinomial requires no tuning, so it is already final
+multinom_final_wf <- multinom_wf
+```
+
+```{r}
+#| label: final-fit
+rf_final_fit       <- fit(rf_final_wf, data = diab_train)
+xgb_final_fit      <- fit(xgb_final_wf, data = diab_train)
+multinom_final_fit <- fit(multinom_final_wf, data = diab_train)
+```
+
+## 6.4 Model Evaluation
+
+```{r}
+#| include: false
+
+get_test_preds <- function(fit, model_name, data, truth_col = Diabetes) {
+  p_class <- predict(fit, data, type = "class")
+  p_prob  <- predict(fit, data, type = "prob")
+  bind_cols(
+    data |> select({{ truth_col }}),
+    p_class,
+    p_prob
+  ) |>
+    mutate(model = model_name)
+}
+
+pred_rf  <- get_test_preds(
+  rf_final_fit,       "Random forest", diab_test, Diabetes)
+pred_xgb <- get_test_preds(
+  xgb_final_fit,      "XGBoost",       diab_test, Diabetes)
+pred_mn  <- get_test_preds(
+  multinom_final_fit, "Multinomial",   diab_test, Diabetes)
+
+pred_all <- bind_rows(pred_rf, pred_xgb, pred_mn)
+
+pred_all <- pred_all |>
+  rename(.pred_No_diabetes = `.pred_No diabetes`)
+```
+
+```{r}
+#| label: rq1-test-metrics
+#| message: false
+#| warning: false
+#| include: false
+
+class_metrics <- pred_all |>
+  group_by(model) |>
+  metric_set(accuracy, bal_accuracy, kap, f_meas)(
+    truth = Diabetes,
+    estimate = .pred_class)
+
+roc_metrics <- pred_all |>
+  group_by(model) |>
+  roc_auc(
+    truth = Diabetes,
+    .pred_No_diabetes,
+    .pred_Prediabetes,
+    .pred_Diabetes,
+    estimator = "macro"
+  )
+
+final_metrics <- bind_rows(class_metrics, roc_metrics) |>
+  mutate(estimator = if_else(is.na(.estimator), "overall", .estimator)) |>
+  select(model, .metric, .estimator, .estimate) |>
+  arrange(match(.metric, c("f_meas","bal_accuracy","roc_auc","kap","accuracy")), model)
+
+final_metrics
+```
+
+```{r}
+#| label: rq1-roc-combined-prep
+#| message: false
+#| warning: false
+#| include: false
+
+roc_all <- pred_all |>
+  group_by(model) |>
+  roc_curve(
+    truth = Diabetes,
+    .pred_No_diabetes,
+    .pred_Prediabetes,
+    .pred_Diabetes
+  )
+```
+
+### 6.4.1 ROC Curves
+
+```{r}
+#| label: rq1-roc-combined
+#| message: false
+#| warning: false
+
+autoplot(roc_all) +
+  labs(
+    title = "Multiclass ROC curves (one-vs-rest) — Test set",
+    x = "1 − Specificity",
+    y = "Sensitivity"
+  ) +
+  theme(
+    legend.position = 'bottom'
+  )
+```
+
+The multiclass ROC curves provide additional insight into discrimination
+performance across the three classes.
+
+For **diabetes** and **no-diabetes**, all models show strong
+discriminative ability, with curves well above the diagonal reference
+line. Differences between models are relatively small, though the
+tree-based models appear slightly stronger in some regions of the curve.
+
+For the **prediabetes class**, however, the multinomial logistic
+regression model clearly outperforms both random forest and XGBoost. The
+ROC curve for the multinomial model remains consistently above the other
+two models, indicating better sensitivity–specificity trade-offs for
+detecting this intermediate category.
+
+### 6.4.2 Confusion Matrices
+
+```{r}
+#| label: rq1-conf-prep
+#| message: false
+#| warning: false
+#| include: false
+
+pred_rf  <- pred_rf  |> rename(.pred_No_diabetes = `.pred_No diabetes`)
+pred_xgb <- pred_xgb |> rename(.pred_No_diabetes = `.pred_No diabetes`)
+pred_mn  <- pred_mn  |> rename(.pred_No_diabetes = `.pred_No diabetes`)
+plot_cm <- function(df, ttl) {
+  cm <- conf_mat(df, truth = Diabetes, estimate = .pred_class)
+  autoplot(cm, type = "heatmap") +
+    labs(title = ttl, x = "Predicted", y = "True") 
+}
+```
+
+```{r}
+#| fig-height: 10
+#| fig-width: 16
+
+p_cm_xgb <- plot_cm(pred_xgb, "Confusion matrix — XGBoost")
+p_cm_rf  <- plot_cm(pred_rf,  "Confusion matrix — Random forest")
+p_cm_mn  <- plot_cm(pred_mn,  "Confusion matrix — Multinomial Logistic Regression")
+
+(p_cm_xgb | p_cm_rf) / p_cm_mn +
+  plot_layout(guides = "collect")
+```
+
+The confusion matrices reveal notable differences in classification
+behaviour across the three models.
+
+The **multinomial logistic regression model** is the only model that
+correctly identifies a meaningful number of **prediabetes cases** (150
+observations). In contrast, both **XGBoost and random forest completely
+fail to predict the prediabetes class**, assigning all observations in
+this category to either the no-diabetes or diabetes classes. This
+indicates that the tree-based models effectively collapse the problem
+into a two-class classification task, ignoring the intermediate
+category.
+
+For the **no-diabetes class**, all three models achieve high numbers of
+correct predictions due to the dominance of this category in the
+dataset. However, the multinomial model shows slightly higher correct
+classifications than the boosted tree model.
+
+For the **diabetes class**, all models correctly identify several
+thousand cases, though misclassification between diabetes and
+no-diabetes remains present across all models.
+
+Overall, the multinomial model demonstrates a **more balanced
+classification behaviour**, particularly by retaining predictive
+capacity for the minority prediabetes class.
+
+**Overall Assessment**
+
+Although gradient boosting and random forest performed competitively
+during cross-validation, the held-out test set evaluation suggests that
+**multinomial logistic regression** provides the most balanced
+performance across classes. In particular, it is the only model capable
+of correctly identifying prediabetes cases while maintaining strong
+discrimination for the other two classes.
+
+## 6.5 Model Interpretation
+
+To complement predictive evaluation, model interpretability techniques
+were used to understand the predictors most strongly associated with
+diabetes status. Two complementary approaches were used. First,
+**multinomial logistic regression coefficients were examined to estimate
+log-odds ratios and odds ratios**, providing interpretable measures of
+association between predictors and diabetes outcomes. Second, **SHAP
+(SHapley Additive exPlanations) values were computed for the gradient
+boosted tree model** to identify the predictors contributing most
+strongly to model predictions in a non-linear modelling framework.
+
+Together, these approaches provide both **statistical interpretability
+and machine-learning feature attribution**, enabling a comprehensive
+understanding of the determinants of diabetes status.
+
+### 6.5.1 Log-Odds Ratios (Multinomial Logistic Regression)
+
+Multinomial logistic regression estimates the log-odds of belonging to
+each diabetes category relative to a reference category. In this
+analysis, **No diabetes** serves as the reference class.
+
+Positive coefficients indicate **higher odds of belonging to the
+specified diabetes category**, while negative coefficients indicate
+**lower odds relative to the reference group**.
+
+```{r}
+#| label: rq1-logodds-prep
+#| include: false
+
+
+multinom_coefs <- multinom_final_fit |>
+  extract_fit_parsnip() |>
+  pluck("fit") |>
+  coef()
+
+multinom_coefs_tidy <- multinom_coefs |>
+  as.data.frame() |>
+  rownames_to_column(var = "y.level") |>
+  pivot_longer(
+    cols = -y.level, 
+    names_to = "term", 
+    values_to = "estimate"
+  )
+
+multinom_coefs_tidy <- multinom_coefs_tidy |>
+  mutate(odds_ratio = exp(estimate))
+
+```
+
+```{r}
+#| fig-height: 7
+#| fig-width: 14
+multinom_coefs_tidy |>
+  filter(term != "(Intercept)") |>
+  ggplot(aes(x = odds_ratio, y = reorder(term, odds_ratio))) +
+  geom_point()  +
+  geom_vline(xintercept = 1, linetype = "dashed") +
+  facet_wrap(~ y.level) +
+  labs(
+    x = "Odds Ratio",
+    y = "Predictor",
+    title = "Odds ratios for predictors of diabetes status"
+  )
+```
+
+**Multinomial Logistic Regression: Odds Ratio (OR) Summary**
+
+*OR \> 1 indicates increased odds; OR \< 1 indicates decreased odds.*
+
+**Synthesis of Findings**
+
+-   **Primary Drivers:** Clinical indicators (Hypertension,
+    Hypercholesterolemia, and BMI) represent the most significant risk.
+    High blood pressure, in particular, yields a **139% increase** in
+    the odds of diabetes ($OR = 2.39$).
+
+-   **The BMI Gradient:** The data shows a clear progression where BMI
+    impacts diabetes ($OR = 1.72$) more severely than prediabetes
+    ($OR = 1.51$), confirming its role in disease advancement.
+
+-   **Behavioral Mediation:** The lack of independent effect for
+    physical activity ($OR = 1.00$) suggests its impact is likely
+    **fully mediated** by metabolic variables like BMI and blood
+    pressure.
+
+-   **Statistical Anomalies:** The negative association with heavy
+    alcohol ($OR = 0.31$) likely reflects **selection bias** (e.g.,
+    "sick quitters" or health-conscious adjustments after diagnosis)
+    rather than a biological protective effect.
+
+**Conclusion**
+
+Diabetes status in this population is best characterized by a
+**multifactorial cardiometabolic profile**. While age and sex are
+relevant, clinical markers of obesity and metabolic syndrome remain the
+most effective predictors for distinguishing between healthy,
+prediabetic, and diabetic individuals.
+
+### 6.5.2 Global SHAP importance
+
+```{r}
+#| include: false
+
+xgb_booster <- xgb_final_fit |> 
+  extract_fit_parsnip() |> 
+  pluck("fit")
+
+
+mold <- extract_mold(xgb_final_fit)
+
+X <- mold$predictors
+
+X_mat <- as.matrix(X)
+
+y <- mold$outcomes
+
+sv <- shapviz(
+  xgb_booster,
+  X_pred = X_mat,  
+  X = X_mat)
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-height: 7
+#| fig-width: 14
+sv_importance(sv, kind = "bar") +
+  scale_fill_discrete(
+    labels = c(
+      "No diabetes",
+      "Prediabetes",
+      "Diabetes")
+  )
+```
+
+> The SHAP importance plot indicates that cardiometabolic indicators
+> dominate the predictive structure of the model. High blood pressure,
+> general health status, high cholesterol, and BMI exhibit the largest
+> mean absolute SHAP contributions across classes, indicating they play
+> the strongest role in shifting predicted probabilities of diabetes
+> status. Age also contributes meaningfully, while behavioural variables
+> such as smoking, fruit consumption, and alcohol use show comparatively
+> smaller effects. This pattern closely mirrors the multinomial logistic
+> regression results, reinforcing the conclusion that diabetes status in
+> this dataset is primarily driven by metabolic and health status
+> indicators rather than lifestyle variables alone.
+
+### 6.5.3 Variable Importance
+
+```{r}
+#| fig-height: 7
+#| fig-width: 14
+xgb_final_fit |> 
+  extract_fit_parsnip() |> 
+  vip(num_features = 15, 
+      geom = "col",
+      aesthetics = list(fill = "steelblue",color = 'black', alpha = 0.8)) +
+  labs(title = "Variable Importance: XGBoost Model",
+       subtitle = "Top 15 predictors based on gain")
+
+```
+
+-   **Consistency with Statistical Findings:** The VIP confirms the
+    results from the multinomial log-odds analysis (Section 6.5.1), with
+    **HighBP**, **BMI**, and **HighChol** consistently appearing as the
+    most influential predictors. This triangulation of methods
+    strengthens the argument that these clinical markers are the primary
+    determinants of diabetes risk in this dataset.
+
+-   **The "Prediabetes" Paradox:** Despite the high importance scores
+    for these top features, the model's struggle to classify the
+    "Prediabetes" class suggests a "ceiling effect." While variables
+    like **HighBP** and **GenHlth** (General Health) are excellent at
+    distinguishing between "Healthy" and "Diabetic" individuals, the
+    feature space lacks the specific granularity required to isolate the
+    transitionary prediabetic phase.
+
+-   **Lifestyle vs. Clinical Markers:** Interestingly, clinical markers
+    (BMI, Blood Pressure) rank significantly higher than lifestyle
+    factors such as **PhysActivity** or **Fruits**. This implies that
+    while lifestyle choices contribute to the outcome, the physiological
+    manifestations (the "clinical profile") are the more immediate and
+    powerful predictors for the gradient-boosted trees.
+
+## 6.6 Conclusion: Model Interpretability and Determinants
+
+The comprehensive analysis of diabetes status, conducted through both
+statistical and machine learning frameworks, demonstrates that diabetes
+risk in this population is best characterized by a multifactorial
+cardiometabolic profile. By triangulating the results from multinomial
+log-odds, XGBoost Variable Importance, and SHAP values, this study
+provides a robust validation of the primary drivers of the disease.
+
+-   **Triangulation of Risk Factors:** There is a clear consensus across
+    all analytical methods regarding the primary determinants of health.
+    The multinomial logistic regression identified **High Blood
+    Pressure** as the strongest categorical predictor, with an
+    associated 139% increase in the odds of a diabetes diagnosis
+    ($OR = 2.39$). This finding is directly mirrored in the **XGBoost
+    Variable Importance Plot (VIP)**, where HighBP ranks as a top-tier
+    feature, and is further clarified by the **SHAP summary plot**,
+    which illustrates how high values for blood pressure, BMI, and
+    cholesterol consistently push the model’s prediction toward the
+    diabetic class.
+
+-   **Predictive Nonlinearity and Impact:** While the linear multinomial
+    model provides clear odds ratios, the SHAP analysis reveals the
+    nuanced, non-linear impacts of features such as **Age** and
+    **General Health**. The SHAP distribution reveals a significant
+    clustering of high-risk impact for older age groups, suggesting that
+    risk does not simply increase linearly, but rather accelerates as
+    multiple clinical markers, such as BMI and cholesterol, coincide.
+
+-   **The "Prediabetes" Gap and Structural Challenges:** A critical
+    finding of this synthesis is the discrepancy in class identification
+    across models. While the machine learning models (XGBoost and Random
+    Forest) performed competitively in overall discrimination, they
+    effectively collapsed the classification into a binary task, failing
+    to isolate the **Prediabetes** class. The SHAP values show a
+    significant overlap in the middle of the feature distribution,
+    explaining this struggle, the clinical signature of prediabetes in
+    this dataset is too similar to the surrounding classes for the
+    boosting algorithm to partition effectively. Conversely, the
+    multinomial logistic regression demonstrated superior balance,
+    maintaining the ability to distinguish the subtle physiological
+    transitions inherent in the intermediate prediabetic category.
+
+-   **Socioeconomic and Actionable Clinical Profiles:** Beyond clinical
+    indicators, general health perception and age remained significant
+    predictors, yet lifestyle factors, such as physical activity and
+    diet, showed weaker direct associations than physiological
+    manifestations. This implies that while lifestyle choices are
+    foundational, they may operate indirectly through their impact on
+    measurable markers like BMI and blood pressure. The synthesis
+    confirms that a high-risk profile is defined by the intersection of
+    these clinical markers, which consistently dominate the top of both
+    the VIP and SHAP rankings, identifying them as the most critical
+    targets for screening and preventative intervention.
+
+|  |  |  |
+|----|----|----|
+| **Method** | **Key Strength** | **Primary Top Predictors** |
+| **Multinomial Logistic** | Identifies the "Prediabetes" gradient | HighBP, BMI, Age |
+| **XGBoost VIP (Gain)** | Highlights overall model efficiency | HighBP, GenHlth, BMI |
+| **SHAP Analysis** | Shows direction and impact of features | HighBP, BMI, HighChol |
+
+In summary, the triangulation of results from the **Odds Ratios**,
+**SHAP values**, and **XGBoost Variable Importance** provides a robust
+validation of the cardiometabolic risk factors. For clinical
+application, the multinomial model remains the most "fit-for-purpose"
+tool due to its unique capacity to identify individuals in the critical
+prediabetic phase.
+
+# 7. Cardiovascular Event Prediction
+
+# References
+
+1.  Aune, D., Norat, T., Leitzmann, M., Tonstad, S., & Vatten, L. J.
+    (2015). Physical activity and the risk of type 2 diabetes: A
+    systematic review and dose–response meta-analysis. *European Journal
+    of Epidemiology*, 30(7), 529–542.
+
+2.  Hill-Briggs, F., Adler, N. E., Berkowitz, S. A., et al. (2021).
+    Social determinants of health and diabetes: A scientific review.
+    *Diabetes Care*, 44(1), 258–279.
+
+3.  Ismail, L., Materwala, H., & Al Kaabi, J. (2021). Association of
+    risk factors with type 2 diabetes: A systematic review.
+    *Computational and Structural Biotechnology Journal*, 19, 1759–1785.
+
+4.  Tatulashvili, S., Fagherazzi, G., Dow, C., Cohen, R., Fosse-Edorh,
+    S., & Balkau, B. (2020). Socioeconomic inequalities and type 2
+    diabetes complications: A systematic review. *Diabetes &
+    Metabolism*, 46(2), 89–99.
+
+5.  Liu, X., Faes, L., Kale, A. U., et al. (2022). Machine
+    learning-based prediction models for cardiovascular disease risk
+    using electronic health records data: systematic review and
+    meta-analysis. *BMJ Open*, 12(6), e057995.
+
+6.  Lundberg, S. M., & Lee, S. I. (2017). A unified approach to
+    interpreting model predictions. *Advances in Neural Information
+    Processing Systems*, 30, 4765–4774.
+
+7.  Roth, G. A., Johnson, C., Abajobir, A., et al. (2024). Heart disease
+    and stroke statistics—2024 update: A report from the American Heart
+    Association. *Circulation*, 149(8).
+
+8.  Collins, S. R., Gunja, M. Z., & Aboulafia, G. N. (2023). *Paying for
+    it: How health care costs and medical debt are making Americans
+    sicker and poorer*. Commonwealth Fund.
+
+9.  Kessler, R. C., Aguilar-Gaxiola, S., Alonso, J., et al. (2010).
+    Relationship between household income and mental disorders.
+    *Archives of General Psychiatry*, 67(5), 474–483.
+
+10. Liu, J., Jiang, N., Fan, A. Z., Thompson, W. W., Ding, R., & Ni, S.
+    (2023). Investigating the associations between socioeconomic factors
+    and unhealthy days among adults using zero-inflated negative
+    binomial regression. *SAGE Open*, 13(3).
+
+11. Rust, K. F., Holt, J. B., & Lu, H. (2014). Models for count data
+    with an application to healthy days measures. *Preventing Chronic
+    Disease*, 11, E91.
+
+12. Gunja, M. Z., et al. (2023). *The cost of not getting care: Income
+    disparities in the affordability of health services across
+    high-income countries*. Commonwealth Fund.

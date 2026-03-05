@@ -1,0 +1,1397 @@
+---
+title: "Modelling Diabetes Health Indicators"
+subtitle: "MA7442 Modelling Data — Assessment 1 (Task 2)"
+author: "Shahmeer Shahzad"
+date: "2026-03-02"
+format:
+  pdf:
+    geometry:
+      - top=2cm
+      - bottom=2cm
+      - left=1.5cm
+      - right=1.5cm
+    documentclass: article
+    df-print: kable
+---
+
+```{r}
+#| label: Loading_Packages_and_workbook_Customization
+#| message: false
+#| warning: false
+#| include: false
+
+# Plot format and dimension
+knitr::opts_chunk$set(dev = "cairo_pdf")
+knitr::opts_chunk$set(fig.width = 14, fig.height = 7)
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE
+)
+
+# Packages
+library(tidyverse)
+library(skimr)
+library(scales)
+library(patchwork)
+library(viridis)
+library(rcompanion)
+
+# Set global ggplot theme
+theme_set(
+  theme_classic(base_size = 16) +
+    theme(
+      plot.title    = element_text(size = 20, face = "bold"),
+      axis.title    = element_text(size = 18),
+      axis.text     = element_text(size = 14),
+      legend.title  = element_text(size = 13),
+      legend.text   = element_text(size = 12),
+      strip.text    = element_text(face = "bold", size = 14),
+      legend.background = element_rect(
+        colour    = "black",
+        fill      = "white",
+        linewidth = 0.5
+      )
+    )
+)
+```
+
+```{r}
+#| label: data-import-and-recode
+#| message: false
+#| warning: false
+#| include: false
+
+diab_raw <- read_csv("dataset_1.csv")
+
+diab <- diab_raw |>
+  mutate(
+    Diabetes = factor(
+      Diabetes_012,
+      levels = c(0, 1, 2),
+      labels = c("No diabetes", "Prediabetes", "Diabetes")
+    ),
+    across(
+      c(CholCheck, Smoker, Stroke, HeartDiseaseorAttack,
+        PhysActivity, Fruits, Veggies, HvyAlcoholConsump,
+        AnyHealthcare, NoDocbcCost, DiffWalk),
+      function(x) factor(x, levels = c(0, 1), labels = c("No", "Yes"))
+    ),
+    across(
+      c(HighBP, HighChol),
+      function(x) factor(x, levels = c(0, 1), labels = c("Not High", "High"))
+    ),
+    Sex = factor(Sex, levels = c(0, 1), labels = c("Female", "Male")),
+    GenHlth = factor(
+      GenHlth,
+      levels  = 1:5,
+      labels  = c("Excellent", "Very good", "Good", "Fair", "Poor"),
+      ordered = TRUE
+    ),
+    Age = factor(
+      Age,
+      levels  = 1:13,
+      labels  = c("18–24", "25–29", "30–34", "35–39", "40–44",
+                  "45–49", "50–54", "55–59", "60–64", "65–69",
+                  "70–74", "75–79", "80+"),
+      ordered = TRUE
+    ),
+    Education = factor(
+      Education,
+      levels  = 1:6,
+      labels  = c("Kindergarten or less", "Grades 1–8",
+                  "Grades 9–11", "High school graduate",
+                  "Some college / technical", "College graduate"),
+      ordered = TRUE
+    ),
+    Income = factor(
+      Income,
+      levels  = 1:8,
+      labels  = c("< $10k", "$10k–$14k", "$15k–$19k", "$20k–$24k",
+                  "$25k–$34k", "$35k–$49k", "$50k–$74k", "$75k+"),
+      ordered = TRUE
+    )
+  ) |>
+  select(-Diabetes_012)
+```
+
+# 1. Introduction and Reflection on Task 1 Feedback
+
+This report constitutes Task 2 of the MA7442 Modelling Data Assessment. It builds directly on the
+exploratory data analysis (EDA) and research questions developed in Task 1, incorporating the
+feedback received on that submission.
+
+## 1.1 Reflection on Task 1 Feedback
+
+Three areas of feedback were identified for improvement.
+
+**Scope of the EDA.** The Task 1 EDA was effective in characterising the dataset but considered
+associations exclusively in relation to diabetes status as the outcome. The feedback noted that
+this narrowed the research questions — all three were oriented towards predicting diabetes — and
+that an additional EDA section exploring non-diabetes-focussed associations would strengthen the
+breadth of the analysis and support more varied research questions. This has been addressed in
+Section 3 of this report, which introduces a dedicated EDA block examining general health,
+mental health burden, and physical activity as outcomes in their own right.
+
+**Research question overlap.** As a consequence of the diabetes-only EDA, the three research
+questions were noted as quite similar in focus. To address this, the research questions have been
+restructured: RQ1 is retained (cardiometabolic associations with diabetes status), the previous
+RQ2 and RQ3 have been consolidated into a single adjusted modelling question (new RQ2), and
+two new non-diabetes-focussed research questions (RQ3 and RQ4) have been developed from the
+additional EDA presented here.
+
+**Figure line type.** In the mean unhealthy days by age group plot (Section 3.3.4 of Task 1),
+`geom_line` was used to connect points across age group categories. Since age group is an ordered
+factor rather than a continuous variable, connecting points implies a linear interpolation that
+cannot be justified. This has been corrected in Task 2: equivalent age-structured visualisations
+use `geom_col` or `geom_point` with `geom_segment` (lollipop style), which represent each
+category as a discrete quantity without implying interpolation between groups.
+
+---
+
+# 2. Data Preparation
+
+The dataset and all variable recoding steps are identical to those described in Task 1 and are
+reproduced in the setup chunk above to ensure a fully self-contained, reproducible document. No
+additional transformations are required for the EDA in Section 3. All 253,680 records are
+retained; no missing values were present.
+
+---
+
+# 3. Additional Exploratory Data Analysis: Non-Diabetes Outcomes
+
+The following analyses explore relationships among health, lifestyle, and socioeconomic variables
+*independently of diabetes status*. The goal is to characterise the joint structure of these
+variables — in particular to understand what shapes self-reported general health, mental health
+burden, and functional limitation — and to motivate the non-diabetes research questions
+introduced in Section 4.
+
+## 3.1 Self-Rated General Health by Socioeconomic Position
+
+General health (`GenHlth`) is a five-level ordered outcome ranging from Excellent to Poor. The
+plots below show how the composition of self-rated health categories shifts across income bands
+(left) and education levels (right), without reference to diabetes status. To emphasise the
+gradient rather than the composition of all five categories, `GenHlth` is collapsed to three
+levels: **Good or better** (Excellent / Very good), **Good**, and **Fair or Poor**.
+
+```{r}
+#| label: genhlth-ses
+#| fig.height: 7
+#| fig.width: 14
+
+diab_gh3 <- diab |>
+  mutate(
+    GenHlth3 = case_when(
+      GenHlth %in% c("Excellent", "Very good") ~ "Good or better",
+      GenHlth == "Good"                         ~ "Good",
+      GenHlth %in% c("Fair", "Poor")            ~ "Fair or Poor"
+    ),
+    GenHlth3 = factor(GenHlth3,
+                      levels = c("Good or better", "Good", "Fair or Poor"))
+  )
+
+gg_inc_gh <- diab_gh3 |>
+  count(Income, GenHlth3) |>
+  group_by(Income) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup() |>
+  ggplot(aes(x = Income, y = prop, fill = GenHlth3)) +
+  geom_col(position = "fill", width = 0.85) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_fill_manual(
+    values = c("Good or better" = "#44AA99",
+               "Good"           = "#DDCC77",
+               "Fair or Poor"   = "#CC6677"),
+    name   = "General Health"
+  ) +
+  labs(
+    title = "General health by income band",
+    x     = "Household income",
+    y     = "Proportion within income group"
+  ) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+
+gg_edu_gh <- diab_gh3 |>
+  count(Education, GenHlth3) |>
+  group_by(Education) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup() |>
+  ggplot(aes(x = Education, y = prop, fill = GenHlth3)) +
+  geom_col(position = "fill", width = 0.85) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_fill_manual(
+    values = c("Good or better" = "#44AA99",
+               "Good"           = "#DDCC77",
+               "Fair or Poor"   = "#CC6677"),
+    name   = "General Health"
+  ) +
+  labs(
+    title = "General health by education level",
+    x     = "Education",
+    y     = "Proportion within education group"
+  ) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+
+(gg_inc_gh | gg_edu_gh) +
+  plot_annotation(
+    title = "Socioeconomic gradient in self-rated general health"
+  ) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+A clear and consistent socioeconomic gradient in self-rated health is visible in both panels. The
+"Fair or Poor" category (red) shrinks monotonically from the lowest to the highest income and
+education groups, while "Good or better" (green) expands correspondingly. College graduates and
+those in the \$75k+ band have the highest proportion of good-or-better health; those with the
+lowest attainment carry the heaviest burden of poor self-rated health. The collapsed three-level
+outcome makes this gradient substantially clearer than the full five-category version and
+directly motivates modelling `GenHlth` as an ordered outcome in RQ3.
+
+## 3.2 Health Burden by Age Group and Sex
+
+Two complementary age-structured summaries are presented side by side: the prevalence of Fair
+or Poor self-rated general health (left), and mean mentally unhealthy days (right). Both use
+the lollipop format to treat each age group as a discrete category, avoiding the spurious linear
+interpolation that a connected line across ordered factors would imply.
+
+```{r}
+#| label: health-burden-age-sex
+#| fig.height: 7
+#| fig.width: 14
+
+pos_dodge <- position_dodge(width = 0.6)
+
+fp_age_sex <- diab |>
+  mutate(FairPoor = GenHlth %in% c("Fair", "Poor")) |>
+  group_by(Age, Sex) |>
+  summarise(prop_fp = mean(FairPoor), .groups = "drop")
+
+gg_fp <- ggplot(fp_age_sex, aes(x = Age, y = prop_fp, colour = Sex)) +
+  geom_linerange(
+    aes(ymin = 0, ymax = prop_fp),
+    position = pos_dodge, linewidth = 0.9
+  ) +
+  geom_point(size = 3.5, position = pos_dodge) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, NA)) +
+  scale_colour_manual(values = c("Female" = "orange", "Male" = "darkgreen")) +
+  labs(
+    title  = "Fair/Poor general health by age and sex",
+    x      = "Age group",
+    y      = "Proportion Fair or Poor",
+    colour = "Sex"
+  ) +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1))
+
+mh_age_sex <- diab |>
+  group_by(Age, Sex) |>
+  summarise(mean_mh = mean(MentHlth), .groups = "drop")
+
+gg_mh_age <- ggplot(mh_age_sex, aes(x = Age, y = mean_mh, colour = Sex)) +
+  geom_linerange(
+    aes(ymin = 0, ymax = mean_mh),
+    position = pos_dodge, linewidth = 0.9
+  ) +
+  geom_point(size = 3.5, position = pos_dodge) +
+  scale_colour_manual(values = c("Female" = "orange", "Male" = "darkgreen")) +
+  labs(
+    title  = "Mean mentally unhealthy days by age and sex",
+    x      = "Age group",
+    y      = "Mean days (past 30)",
+    colour = "Sex"
+  ) +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1))
+
+ph_age_sex <- diab |>
+  group_by(Age, Sex) |>
+  summarise(mean_ph = mean(PhysHlth), .groups = "drop")
+
+gg_ph_age <- ggplot(ph_age_sex, aes(x = Age, y = mean_ph, colour = Sex)) +
+  geom_linerange(
+    aes(ymin = 0, ymax = mean_ph),
+    position = pos_dodge, linewidth = 0.9
+  ) +
+  geom_point(size = 3.5, position = pos_dodge) +
+  scale_colour_manual(values = c("Female" = "orange", "Male" = "darkgreen")) +
+  labs(
+    title  = "Mean physically unhealthy days by age and sex",
+    x      = "Age group",
+    y      = "Mean days (past 30)",
+    colour = "Sex"
+  ) +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1))
+
+(gg_fp | gg_mh_age | gg_ph_age) +
+  plot_annotation(title = "Health burden across the life course by sex") +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+The three panels reveal strikingly different age profiles for the three burden measures. Fair or
+Poor self-rated health rises monotonically with age — a cumulative pattern driven by the
+accumulation of chronic conditions. Mean mentally unhealthy days show the opposite: highest in
+young adulthood (25–39), especially among women, then declining through the life course,
+suggesting that psychological distress is concentrated earlier in adult life. Mean physically
+unhealthy days follow the same direction as self-rated health (rising with age) but climb more
+steeply, particularly after age 55, reflecting the direct impact of physical morbidity on
+day-to-day functioning. This divergence in age trajectories across the three measures justifies
+treating `GenHlth`, `MentHlth`, and `PhysHlth` as distinct outcomes in subsequent modelling
+rather than collapsing them into a single health index.
+
+## 3.3 Mental Health Burden by Income and Sex
+
+Mental health burden (`MentHlth`) is recorded as days of poor mental health in the past 30. The
+distribution is strongly zero-inflated; for a clinically meaningful summary, the prevalence of
+*high* mental health burden (≥ 14 days, consistent with the common definition of impairment used
+in population mental health surveillance) is used rather than the mean. This avoids undue
+influence from the zero spike and is more interpretable for health equity purposes.
+
+```{r}
+#| label: mental-health-income
+#| fig.height: 7
+#| fig.width: 14
+
+diab |>
+  mutate(HighMH = MentHlth >= 14) |>
+  group_by(Income, Sex) |>
+  summarise(prop_high = mean(HighMH), .groups = "drop") |>
+  ggplot(aes(x = Income, y = prop_high, fill = Sex)) +
+  geom_col(position = position_dodge(width = 0.75), width = 0.65) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_fill_manual(values = c("Female" = "orange", "Male" = "darkgreen")) +
+  labs(
+    title = "Prevalence of high mental health burden (≥14 days) by income and sex",
+    x     = "Household income",
+    y     = "Proportion with ≥14 mentally unhealthy days",
+    fill  = "Sex"
+  ) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+```
+
+A pronounced inverse income gradient is visible: the lowest income group (< \$10k) has the
+highest prevalence of high mental health burden for both women and men, with values declining
+steadily as income rises. Women report higher burden than men at every income level; the gap
+is widest at the lowest income bands, where women's prevalence exceeds men's by approximately
+7–9 percentage points. This amplification of sex-based disadvantage at lower income levels is
+a pattern of particular interest for RQ4.
+
+## 3.4 Physical Health Burden by Income and Sex
+
+Physical health burden (`PhysHlth`) records the number of days in the past 30 that the
+respondent considered their physical health poor. Like `MentHlth`, its distribution is
+zero-inflated. The plot below examines the prevalence of high physical health burden (≥ 14 days)
+across income groups stratified by sex, using the same format as the mental health analysis in
+Section 3.3 to allow direct comparison.
+
+```{r}
+#| label: physhlth-income-sex
+#| fig.height: 7
+#| fig.width: 14
+
+diab |>
+  mutate(HighPH = PhysHlth >= 14) |>
+  group_by(Income, Sex) |>
+  summarise(prop_high = mean(HighPH), .groups = "drop") |>
+  ggplot(aes(x = Income, y = prop_high, fill = Sex)) +
+  geom_col(
+    position  = position_dodge(width = 0.75),
+    width     = 0.65,
+    colour    = "black",
+    linewidth = 0.2
+  ) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, NA)) +
+  scale_fill_manual(values = c("Female" = "orange", "Male" = "darkgreen")) +
+  labs(
+    title = "Prevalence of high physical health burden (≥14 days) by income and sex",
+    x     = "Household income",
+    y     = "Proportion with ≥14 physically unhealthy days",
+    fill  = "Sex"
+  ) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+```
+
+Physical health burden follows a steeper and more pronounced inverse income gradient than
+mental health burden. In the lowest income group, over 30% of respondents report ≥14 physically
+unhealthy days — substantially higher than the equivalent mental health figure — while in the
+highest income group this falls below 10%. Unlike the mental health pattern, the sex difference
+in physical health burden is smaller and less consistent across income bands: at lower income
+levels, women and men show similar proportions, while at higher income levels women show slightly
+higher prevalence. The stronger income gradient relative to mental health suggests that material
+conditions (access to healthcare, occupational physical demands, food security) have a more
+direct bearing on physical than mental day-to-day functioning.
+
+## 3.5 Joint Distribution of Mental and Physical Health Burden by Sex
+
+Both `MentHlth` and `PhysHlth` span 0–30 days. The hexbin heatmap below examines their joint
+distribution separately for women and men to reveal whether co-occurrence of mental and physical
+burden differs between sexes.
+
+```{r}
+#| label: menth-physh-hexbin
+#| fig.height: 7
+#| fig.width: 14
+
+ggplot(diab, aes(x = MentHlth, y = PhysHlth)) +
+  geom_hex(bins = 30) +
+  scale_fill_viridis_c(option = "magma", name = "Count", trans = "log10") +
+  facet_wrap(~ Sex, nrow = 1) +
+  labs(
+    title = "Joint distribution of mentally and physically unhealthy days by sex",
+    x     = "Mentally unhealthy days (past 30)",
+    y     = "Physically unhealthy days (past 30)"
+  )
+```
+
+In both sexes, the joint distribution is dominated by the (0, 0) cell — the majority of
+respondents report zero days of both kinds of burden. However, off-diagonal density is
+substantial: high values on one dimension tend to co-occur with high values on the other,
+producing elevated density along the axes (particularly at 30 days) and in the upper-right
+corner. The pattern is broadly similar for women and men, though the female panel shows slightly
+higher density in the high-MentHlth, low-PhysHlth region, consistent with the sex differences
+in mental burden observed in Section 3.2.
+
+## 3.6 Mental Health Burden by Physical Activity
+
+Physical activity is a binary indicator. The plot below examines whether individuals who report
+no physical activity carry a greater mental health burden, independent of diabetes status.
+
+```{r}
+#| label: menthlth-physact
+#| fig.height: 7
+#| fig.width: 14
+
+diab |>
+  mutate(HighMH = MentHlth >= 14) |>
+  group_by(PhysActivity, Sex) |>
+  summarise(prop_high = mean(HighMH), .groups = "drop") |>
+  ggplot(aes(x = PhysActivity, y = prop_high, fill = Sex)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_fill_manual(values = c("Female" = "orange", "Male" = "darkgreen")) +
+  labs(
+    title = "Prevalence of high mental health burden (≥14 days) by physical activity and sex",
+    x     = "Physical activity (past 30 days)",
+    y     = "Proportion with ≥14 mentally unhealthy days",
+    fill  = "Sex"
+  )
+```
+
+Physically inactive individuals show substantially higher prevalence of high mental health burden
+than those reporting physical activity, in both sexes. Women who are physically inactive have the
+highest prevalence across all four groups. The sex gap is present in both activity categories,
+but larger among inactive individuals, suggesting that physical inactivity and female sex may
+jointly amplify mental health burden. This cross-cutting pattern reinforces physical activity as
+a candidate predictor in RQ4.
+
+
+## 3.7 Stroke and Heart Disease Prevalence by Age Group
+
+Stroke (`Stroke`) and coronary heart disease or heart attack (`HeartDiseaseorAttack`) are
+serious acute cardiovascular events that increase in prevalence with age. The lollipop charts
+below show how each outcome's prevalence rises across age groups, without conditioning on
+diabetes status. The two panels are placed side by side to allow direct comparison of their
+age trajectories.
+
+```{r}
+#| label: stroke-heartdisease-age
+#| fig.height: 7
+#| fig.width: 14
+
+gg_stroke <- diab |>
+  group_by(Age) |>
+  summarise(prop = mean(Stroke == "Yes"), .groups = "drop") |>
+  ggplot(aes(x = Age, y = prop)) +
+  geom_linerange(
+    aes(ymin = 0, ymax = prop),
+    linewidth = 1.1, colour = "#AA3377"
+  ) +
+  geom_point(size = 3.8, colour = "#AA3377") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Stroke prevalence by age group",
+    x     = "Age group",
+    y     = "Proportion reporting stroke"
+  ) +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1))
+
+gg_heart <- diab |>
+  group_by(Age) |>
+  summarise(prop = mean(HeartDiseaseorAttack == "Yes"), .groups = "drop") |>
+  ggplot(aes(x = Age, y = prop)) +
+  geom_linerange(
+    aes(ymin = 0, ymax = prop),
+    linewidth = 1.1, colour = "#EE7733"
+  ) +
+  geom_point(size = 3.8, colour = "#EE7733") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Heart disease / attack prevalence by age group",
+    x     = "Age group",
+    y     = "Proportion reporting heart disease or attack"
+  ) +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1))
+
+(gg_stroke | gg_heart) +
+  plot_annotation(
+    title = "Cardiovascular event prevalence by age group"
+  )
+```
+
+Both stroke and heart disease prevalence rise steeply with age. Stroke is rare below age 45
+(under 2%) but increases sharply from the 55–59 group onwards, reaching nearly 12% by the
+80+ group. Heart disease follows a similar but steeper trajectory, exceeding 20% in the
+oldest age groups. The contrast between the two panels highlights that coronary events are
+approximately twice as prevalent as stroke at equivalent ages in this sample. These strong
+age gradients indicate that both outcomes are substantially age-driven in this population,
+independent of diabetes status.
+
+## 3.8 Diet Score (Fruits and Vegetables) by General Health
+
+`Fruits` and `Veggies` are binary indicators of whether the respondent consumed fruit and
+vegetables at least once daily. A combined diet score (0, 1, or 2 daily servings) is derived
+and its association with self-rated general health (collapsed to three levels) is examined.
+This introduces dietary behaviour as a distinct lifestyle dimension not previously explored in
+this EDA.
+
+```{r}
+#| label: diet-genhlth
+#| fig.height: 7
+#| fig.width: 14
+
+diab |>
+  mutate(
+    DietScore = (Fruits == "Yes") + (Veggies == "Yes"),
+    DietScore = factor(DietScore,
+                       levels = 0:2,
+                       labels = c("Neither", "One only", "Both")),
+    GenHlth3  = case_when(
+      GenHlth %in% c("Excellent", "Very good") ~ "Good or better",
+      GenHlth == "Good"                         ~ "Good",
+      GenHlth %in% c("Fair", "Poor")            ~ "Fair or Poor"
+    ),
+    GenHlth3 = factor(GenHlth3,
+                      levels = c("Good or better", "Good", "Fair or Poor"))
+  ) |>
+  count(DietScore, GenHlth3) |>
+  group_by(DietScore) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup() |>
+  ggplot(aes(x = DietScore, y = prop, fill = GenHlth3)) +
+  geom_col(position = "fill", width = 0.75, colour = "black", linewidth = 0.2) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_fill_manual(
+    values = c("Good or better" = "#44AA99",
+               "Good"           = "#DDCC77",
+               "Fair or Poor"   = "#CC6677"),
+    name   = "General Health"
+  ) +
+  labs(
+    title = "Self-rated general health by daily fruit and vegetable consumption",
+    x     = "Daily servings of fruit/vegetables (0, 1 or 2)",
+    y     = "Proportion within diet group"
+  )
+```
+
+A clear dietary gradient in self-rated health is visible. Respondents who consume neither
+fruit nor vegetables daily have the highest proportion of Fair or Poor health and the lowest
+proportion of Good or better. Those consuming both daily show the most favourable health
+distribution. The pattern is monotonic and consistent with public health evidence linking
+diet quality to perceived health. Importantly, this gradient appears independently of income
+and education, making diet a candidate predictor distinct from socioeconomic position in the
+general health model for RQ3.
+
+## 3.9 Smoking Prevalence by Income and Education
+
+The dataset records `Smoker` as a binary indicator of ever-smoking (≥100 cigarettes lifetime).
+The plots below show how smoking prevalence varies across income bands and education levels,
+independently of diabetes status.
+
+```{r}
+#| label: smoker-ses
+#| fig.height: 7
+#| fig.width: 14
+
+gg_smk_inc <- diab |>
+  group_by(Income) |>
+  summarise(prop_smk = mean(Smoker == "Yes"), .groups = "drop") |>
+  ggplot(aes(x = Income, y = prop_smk)) +
+  geom_col(fill = "#BBBBBB", colour = "black", linewidth = 0.3, width = 0.75) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 0.65)) +
+  labs(
+    title = "Smoking prevalence by income band",
+    x     = "Household income",
+    y     = "Proportion ever-smoker"
+  ) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+
+gg_smk_edu <- diab |>
+  group_by(Education) |>
+  summarise(prop_smk = mean(Smoker == "Yes"), .groups = "drop") |>
+  ggplot(aes(x = Education, y = prop_smk)) +
+  geom_col(fill = "#888888", colour = "black", linewidth = 0.3, width = 0.75) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 0.65)) +
+  labs(
+    title = "Smoking prevalence by education level",
+    x     = "Education",
+    y     = "Proportion ever-smoker"
+  ) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+
+(gg_smk_inc | gg_smk_edu) +
+  plot_annotation(
+    title = "Socioeconomic gradient in smoking prevalence"
+  )
+```
+
+Smoking prevalence shows a clear inverse socioeconomic gradient across both income and
+education. In the lowest income band, over 55% of respondents report ever-smoking, compared
+with under 30% in the \$75k+ group — nearly a twofold difference. The education gradient is
+equally pronounced, with the lowest attainment groups having the highest prevalence and college
+graduates the lowest. This socioeconomic patterning of smoking establishes it as a
+confounded variable in models of general health: apparent smoking–health associations may
+partly reflect underlying differences in income and education. Adjustment for socioeconomic
+position is therefore necessary to isolate any independent relationship between smoking and
+self-rated health.
+
+## 3.10 Heavy Alcohol Consumption by Age Group and Sex
+
+Heavy alcohol consumption (`HvyAlcoholConsump`) is a binary indicator defined in the BRFSS
+as drinking more than 14 drinks per week (men) or more than 7 per week (women). The plot
+below examines its prevalence across age groups, stratified by sex.
+
+```{r}
+#| label: alcohol-age-sex
+#| fig.height: 7
+#| fig.width: 14
+
+diab |>
+  group_by(Age, Sex) |>
+  summarise(prop_alc = mean(HvyAlcoholConsump == "Yes"), .groups = "drop") |>
+  ggplot(aes(x = Age, y = prop_alc, colour = Sex)) +
+  geom_linerange(
+    aes(ymin = 0, ymax = prop_alc),
+    position = position_dodge(width = 0.6),
+    linewidth = 0.9
+  ) +
+  geom_point(size = 3.5, position = position_dodge(width = 0.6)) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, NA)) +
+  scale_colour_manual(values = c("Female" = "orange", "Male" = "darkgreen")) +
+  labs(
+    title  = "Heavy alcohol consumption prevalence by age group and sex",
+    x      = "Age group",
+    y      = "Proportion reporting heavy alcohol use",
+    colour = "Sex"
+  ) +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1))
+```
+
+Heavy alcohol consumption is consistently more prevalent among men than women across all age
+groups. For men, prevalence is highest in younger and middle-age groups (18–49), peaking
+around 10–12%, then declining markedly in older age bands. Women's prevalence is lower
+throughout, remaining under 5% at most ages and declining even earlier in the life course.
+This age-sex pattern distinguishes heavy alcohol use from most other binary risk factors in
+this dataset, where age gradients are typically upward rather than peaking in mid-life.
+Notably, heavy alcohol consumption is one of the few lifestyle variables that is *more* common
+among younger and middle-aged adults, which has implications for interpreting its weak
+association with diabetes and self-rated health.
+
+## 3.11 Physical Activity by Income and Education
+
+```{r}
+#| label: physact-ses
+#| fig.height: 7
+#| fig.width: 14
+
+gg_pa_inc <- diab |>
+  count(Income, PhysActivity) |>
+  group_by(Income) |>
+  mutate(prop = n / sum(n)) |>
+  filter(PhysActivity == "Yes") |>
+  ggplot(aes(x = Income, y = prop)) +
+  geom_col(fill = "#3B9AB2", width = 0.75) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1)) +
+  labs(
+    title = "Physical activity by income band",
+    x     = "Household income",
+    y     = "Proportion reporting physical activity"
+  ) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+
+gg_pa_edu <- diab |>
+  count(Education, PhysActivity) |>
+  group_by(Education) |>
+  mutate(prop = n / sum(n)) |>
+  filter(PhysActivity == "Yes") |>
+  ggplot(aes(x = Education, y = prop)) +
+  geom_col(fill = "#E1AF00", width = 0.75) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1)) +
+  labs(
+    title = "Physical activity by education level",
+    x     = "Education",
+    y     = "Proportion reporting physical activity"
+  ) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+
+(gg_pa_inc | gg_pa_edu) +
+  plot_annotation(
+    title = "Physical activity participation across socioeconomic strata"
+  )
+```
+
+Physical activity participation rises monotonically with both income and education, from below
+60% in the lowest income group to over 80% among the highest earners. The education gradient
+is equally pronounced. These patterns suggest that socioeconomic barriers — including access to
+safe recreational environments, time constraints, and cost — shape physical activity
+independently of health status or age, and that any model of mental or general health must
+account for socioeconomic position to avoid confounding physical activity effects.
+
+## 3.12 General Health by Smoking Status
+
+Smoking is a binary indicator of ever-smoking (at least 100 cigarettes in lifetime). The stacked
+proportion chart below shows how self-rated general health (collapsed to three levels) varies
+between smokers and non-smokers, separately by sex.
+
+```{r}
+#| label: genhlth-smoker
+#| fig.height: 7
+#| fig.width: 14
+
+diab_gh3 |>
+  count(Smoker, Sex, GenHlth3) |>
+  group_by(Smoker, Sex) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup() |>
+  ggplot(aes(x = Smoker, y = prop, fill = GenHlth3)) +
+  geom_col(position = "fill", width = 0.75) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_fill_manual(
+    values = c("Good or better" = "#44AA99",
+               "Good"           = "#DDCC77",
+               "Fair or Poor"   = "#CC6677"),
+    name   = "General Health"
+  ) +
+  facet_wrap(~ Sex, nrow = 1) +
+  labs(
+    title = "Self-rated general health by smoking status and sex",
+    x     = "Smoking status",
+    y     = "Proportion within group"
+  )
+```
+
+Smokers have a markedly higher proportion of "Fair or Poor" general health than non-smokers in
+both sexes, and a lower proportion of "Good or better." The pattern is consistent across women
+and men, indicating that the smoking–health gradient is not sex-specific. The gap between
+smokers and non-smokers within each sex is roughly of similar magnitude, suggesting that
+smoking is an independent lifestyle predictor of self-rated health. This supports its inclusion
+as a covariate in the general health model for RQ3.
+
+## 3.13 Functional Limitation (DiffWalk) by Age Group
+
+Difficulty walking or climbing stairs (`DiffWalk`) is a self-reported binary indicator of
+functional limitation. The lollipop chart below shows how its prevalence increases across age
+groups.
+
+```{r}
+#| label: diffwalk-age
+#| fig.height: 7
+#| fig.width: 14
+
+diab |>
+  group_by(Age) |>
+  summarise(prop_dw = mean(DiffWalk == "Yes"), .groups = "drop") |>
+  ggplot(aes(x = Age, y = prop_dw)) +
+  geom_segment(
+    aes(xend = Age, y = 0, yend = prop_dw),
+    linewidth = 1.1,
+    colour    = "#882255"
+  ) +
+  geom_point(size = 3.8, colour = "#882255") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Prevalence of difficulty walking by age group",
+    x     = "Age group",
+    y     = "Proportion reporting difficulty walking"
+  ) +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1))
+```
+
+The prevalence of difficulty walking rises steeply with age, from under 5% in the 18–24 group
+to over 45% among those aged 80 and above. The trajectory is non-linear, with the steepest
+increases occurring between the 55–59 and 70–74 groups. This strong age gradient indicates
+that functional limitation is a substantive health outcome in its own right — distinct from
+disease status — that merits investigation alongside self-rated health.
+
+## 3.14 Functional Limitation by BMI Category
+
+```{r}
+#| label: diffwalk-bmi
+#| fig.height: 7
+#| fig.width: 14
+
+diab |>
+  mutate(
+    BMI_cat = case_when(
+      BMI < 18.5              ~ "Underweight",
+      BMI >= 18.5 & BMI < 25 ~ "Normal",
+      BMI >= 25   & BMI < 30 ~ "Overweight",
+      BMI >= 30               ~ "Obese"
+    ),
+    BMI_cat = factor(BMI_cat,
+                     levels = c("Underweight", "Normal", "Overweight", "Obese"))
+  ) |>
+  group_by(BMI_cat, Sex) |>
+  summarise(prop_dw = mean(DiffWalk == "Yes"), .groups = "drop") |>
+  ggplot(aes(x = BMI_cat, y = prop_dw, fill = Sex)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_fill_manual(values = c("Female" = "orange", "Male" = "darkgreen")) +
+  labs(
+    title = "Prevalence of difficulty walking by BMI category and sex",
+    x     = "BMI category",
+    y     = "Proportion reporting difficulty walking",
+    fill  = "Sex"
+  )
+```
+
+Difficulty walking increases sharply with BMI category in both sexes: the obese group has
+roughly three times the prevalence of the normal-weight group. Women in the obese category
+show the highest prevalence of all groups. This dose–response relationship between adiposity
+and functional limitation — independently of age or diabetes — indicates that BMI is an
+important predictor of functional health outcomes in this population.
+
+## 3.15 Cardiometabolic Risk Factor Prevalence by Age and Sex
+
+High blood pressure and high cholesterol are the two most prevalent cardiometabolic risk factors
+in the dataset and their Cramér's V (V ≈ 0.30 in Section 3.20) is the strongest pairwise binary
+association — motivating a direct side-by-side comparison of their age trajectories.
+
+```{r}
+#| label: highbp-highchol-age-sex
+#| fig.height: 7
+#| fig.width: 14
+
+gg_hbp <- diab |>
+  group_by(Age, Sex) |>
+  summarise(prop = mean(HighBP == "High"), .groups = "drop") |>
+  ggplot(aes(x = Age, y = prop, colour = Sex)) +
+  geom_linerange(
+    aes(ymin = 0, ymax = prop),
+    position = pos_dodge, linewidth = 0.9
+  ) +
+  geom_point(size = 3.5, position = pos_dodge) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, NA)) +
+  scale_colour_manual(values = c("Female" = "orange", "Male" = "darkgreen")) +
+  labs(
+    title  = "High blood pressure by age and sex",
+    x      = "Age group",
+    y      = "Proportion with high BP",
+    colour = "Sex"
+  ) +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1))
+
+gg_hchol <- diab |>
+  group_by(Age, Sex) |>
+  summarise(prop = mean(HighChol == "High"), .groups = "drop") |>
+  ggplot(aes(x = Age, y = prop, colour = Sex)) +
+  geom_linerange(
+    aes(ymin = 0, ymax = prop),
+    position = pos_dodge, linewidth = 0.9
+  ) +
+  geom_point(size = 3.5, position = pos_dodge) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, NA)) +
+  scale_colour_manual(values = c("Female" = "orange", "Male" = "darkgreen")) +
+  labs(
+    title  = "High cholesterol by age and sex",
+    x      = "Age group",
+    y      = "Proportion with high cholesterol",
+    colour = "Sex"
+  ) +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1))
+
+(gg_hbp | gg_hchol) +
+  plot_annotation(
+    title = "Hypertension and hypercholesterolaemia prevalence by age and sex"
+  ) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+Both conditions rise steeply with age but their sex patterns diverge in a clinically meaningful
+way. Hypertension prevalence is higher in men than women up to approximately 60–64, after which
+the gap closes and reverses — consistent with the loss of oestrogen's vasodilatory protection
+after menopause. High cholesterol shows an even earlier crossover: men exceed women until around
+age 55–59, after which women's prevalence overtakes men's, reflecting the well-documented
+post-menopausal rise in LDL cholesterol. Together, the panels illustrate that while both risk
+factors share a common age gradient, their sex-specific trajectories are driven by different
+biological mechanisms, and that adjusted models should allow for age–sex interactions when
+including either variable.
+
+## 3.16 Healthcare Access by Income
+
+Healthcare coverage (`AnyHealthcare`) and cost-related barriers to care (`NoDocbcCost`) are
+access indicators that may themselves be outcomes of socioeconomic position. The plots below
+examine their prevalence across income bands.
+
+```{r}
+#| label: healthcare-income
+#| fig.height: 7
+#| fig.width: 14
+
+gg_hc <- diab |>
+  group_by(Income) |>
+  summarise(prop_hc = mean(AnyHealthcare == "Yes"), .groups = "drop") |>
+  ggplot(aes(x = Income, y = prop_hc)) +
+  geom_col(fill = "#117733", width = 0.75) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1)) +
+  labs(
+    title = "Healthcare coverage by income band",
+    x     = "Household income",
+    y     = "Proportion with any healthcare coverage"
+  ) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+
+gg_cost <- diab |>
+  group_by(Income) |>
+  summarise(prop_cost = mean(NoDocbcCost == "Yes"), .groups = "drop") |>
+  ggplot(aes(x = Income, y = prop_cost)) +
+  geom_col(fill = "#CC3311", width = 0.75) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 0.25)) +
+  labs(
+    title = "Cost barrier to care by income band",
+    x     = "Household income",
+    y     = "Proportion unable to see doctor due to cost"
+  ) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+
+(gg_hc | gg_cost) +
+  plot_annotation(
+    title = "Healthcare access indicators by household income"
+  )
+```
+
+Healthcare coverage rises monotonically with income, from under 80% in the lowest income group
+to over 97% among the highest earners. Conversely, cost-related barriers to care are most
+prevalent at the lowest income level (exceeding 20%) and decline sharply as income rises, to
+under 5% in the \$75k+ group. These two indicators reveal a double disadvantage at the bottom
+of the income distribution: lower-income individuals are both less likely to be covered and more
+likely to face cost barriers when seeking care. This pattern is relevant to the health equity
+framing of RQ3 and RQ4, as unmet healthcare needs may confound observed relationships between
+lifestyle factors and health outcomes.
+
+## 3.17 BMI Distribution by Age Group and Income
+
+```{r}
+#| label: bmi-age-income
+#| fig.height: 7
+#| fig.width: 14
+
+bmi_age <- diab |>
+  group_by(Age) |>
+  summarise(
+    median_bmi = median(BMI),
+    q25        = quantile(BMI, 0.25),
+    q75        = quantile(BMI, 0.75),
+    .groups    = "drop"
+  )
+
+gg_bmi_age <- ggplot(bmi_age, aes(x = Age, y = median_bmi)) +
+  geom_segment(
+    aes(xend = Age, y = q25, yend = q75),
+    linewidth = 1.2,
+    colour    = "#46ACC8"
+  ) +
+  geom_point(size = 3.5, colour = "#E58601") +
+  labs(
+    title    = "BMI by age group",
+    subtitle = "Points = median; bars = IQR",
+    x        = "Age group",
+    y        = "Body Mass Index"
+  ) +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1))
+
+bmi_inc <- diab |>
+  group_by(Income) |>
+  summarise(
+    median_bmi = median(BMI),
+    q25        = quantile(BMI, 0.25),
+    q75        = quantile(BMI, 0.75),
+    .groups    = "drop"
+  )
+
+gg_bmi_inc <- ggplot(bmi_inc, aes(x = Income, y = median_bmi)) +
+  geom_segment(
+    aes(xend = Income, y = q25, yend = q75),
+    linewidth = 1.2,
+    colour    = "#46ACC8"
+  ) +
+  geom_point(size = 3.5, colour = "#E58601") +
+  labs(
+    title    = "BMI by income band",
+    subtitle = "Points = median; bars = IQR",
+    x        = "Household income",
+    y        = "Body Mass Index"
+  ) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+
+(gg_bmi_age | gg_bmi_inc) +
+  plot_annotation(
+    title = "BMI distribution by age group and household income"
+  )
+```
+
+Median BMI rises from young adulthood, peaks in the 50–59 age range, then shows a modest
+decline in the oldest groups, likely reflecting survivorship effects. The IQR is widest in
+mid-life. The inverse income gradient is pronounced: the lowest income group has the highest
+median BMI and widest spread, while median BMI and IQR narrow progressively with rising income.
+Both plots use IQR bars rather than connected lines, correctly treating each category as discrete.
+
+## 3.18 Co-occurrence of Hypertension and High Cholesterol
+
+The Cramér's V analysis in Section 3.20 identifies the HighBP–HighChol pair as the strongest
+binary association in the dataset (V ≈ 0.30). The heatmap below quantifies the joint prevalence
+of all four HighBP × HighChol combinations to show how cardiometabolic risk clusters within
+individuals.
+
+```{r}
+#| label: highbp-highchol-joint
+#| fig.height: 5
+#| fig.width: 8
+
+diab |>
+  count(HighBP, HighChol) |>
+  mutate(prop = n / sum(n)) |>
+  ggplot(aes(x = HighBP, y = HighChol, fill = prop)) +
+  geom_tile(colour = "white", linewidth = 1.5) +
+  geom_text(
+    aes(label = paste0(round(prop * 100, 1), "%")),
+    size = 6, fontface = "bold", colour = "white"
+  ) +
+  scale_fill_gradient(
+    low  = "#EEEEEE",
+    high = "#882255",
+    name = "Proportion
+of sample"
+  ) +
+  labs(
+    title = "Joint prevalence of high blood pressure and high cholesterol",
+    x     = "High blood pressure",
+    y     = "High cholesterol"
+  )
+```
+
+Almost one-third of the sample has both hypertension and high cholesterol simultaneously,
+while a further substantial proportion has one but not the other. The off-diagonal cells —
+those with only one risk factor — are considerably smaller than the joint-positive cell,
+confirming that cardiometabolic risk factors cluster rather than occurring independently. This
+joint burden pattern is relevant because individuals with both conditions face substantially
+elevated cardiovascular risk. In any model of general health or diabetes, treating these two
+binary indicators as independent additive predictors may understate the risk faced by those
+who are positive for both.
+
+## 3.19 Physical Activity by Functional Limitation Status
+
+The second-strongest binary association in Section 3.20 is between PhysActivity and DiffWalk
+(V ≈ 0.25). The plot below examines whether this reflects a unidirectional relationship
+(mobility limitation reducing activity) by showing physical activity prevalence stratified by
+DiffWalk status and sex.
+
+```{r}
+#| label: physact-diffwalk
+#| fig.height: 7
+#| fig.width: 9
+
+diab |>
+  group_by(DiffWalk, Sex) |>
+  summarise(prop_active = mean(PhysActivity == "Yes"), .groups = "drop") |>
+  ggplot(aes(x = DiffWalk, y = prop_active, fill = Sex)) +
+  geom_col(
+    position  = position_dodge(width = 0.7),
+    width     = 0.6,
+    colour    = "black",
+    linewidth = 0.2
+  ) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1)) +
+  scale_fill_manual(values = c("Female" = "orange", "Male" = "darkgreen")) +
+  labs(
+    title = "Physical activity prevalence by difficulty walking status and sex",
+    x     = "Difficulty walking or climbing stairs",
+    y     = "Proportion reporting physical activity",
+    fill  = "Sex"
+  )
+```
+
+Physical activity prevalence is dramatically lower among those who report difficulty walking:
+approximately 40–45% of individuals with DiffWalk are physically active, compared with over 75%
+of those without difficulty walking — a gap of more than 30 percentage points in both sexes.
+The sex difference within each DiffWalk category is small relative to the DiffWalk gap itself.
+This pattern indicates that mobility limitation is a major structural barrier to physical
+activity, independent of diabetes, age, or income. Any model treating physical activity as a
+predictor of health outcomes must account for functional limitation as a potential confoundering
+or mediating factor, since some of the apparent "physical inactivity" is driven by inability
+rather than choice.
+
+## 3.20 Cramér's V Association Heatmap: Binary Clinical and Lifestyle Variables
+
+To complement the Spearman correlation heatmap for continuous/ordinal variables, the strength
+of pairwise associations among all binary clinical and lifestyle indicators is quantified using
+Cramér's V. This symmetric measure summarises the association in each 2×2 contingency table on
+a 0–1 scale, without assuming any directionality. Diabetes status is deliberately excluded.
+
+```{r}
+#| label: cramerv-heatmap-binary
+#| fig.height: 7
+#| fig.width: 10
+
+bin_vars <- c("HighBP", "HighChol", "Smoker", "Stroke",
+              "HeartDiseaseorAttack", "PhysActivity",
+              "HvyAlcoholConsump", "DiffWalk",
+              "AnyHealthcare", "NoDocbcCost")
+
+cv_mat <- outer(
+  bin_vars, bin_vars,
+  Vectorize(function(a, b) {
+    cramerV(table(diab[[a]], diab[[b]]))
+  })
+)
+dimnames(cv_mat) <- list(bin_vars, bin_vars)
+
+cv_tidy <- cv_mat |>
+  as.data.frame() |>
+  rownames_to_column("Var1") |>
+  pivot_longer(-Var1, names_to = "Var2", values_to = "V") |>
+  mutate(
+    Var1 = factor(Var1, levels = bin_vars),
+    Var2 = factor(Var2, levels = bin_vars)
+  )
+
+ggplot(cv_tidy, aes(x = Var1, y = Var2, fill = V)) +
+  geom_tile(colour = "white") +
+  geom_text(
+    aes(label = sprintf("%.2f", V)),
+    size   = 3.8,
+    colour = "white"
+  ) +
+  scale_fill_viridis_c(
+    option = "inferno",
+    limits = c(0, 1),
+    name   = "Cramér's V"
+  ) +
+  labs(
+    title = "Cramér's V among binary clinical and lifestyle variables",
+    subtitle = "Diabetes status excluded",
+    x     = NULL,
+    y     = NULL
+  ) +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1))
+```
+
+Several pairs of binary variables show moderate associations. `HighBP` and `HighChol`
+(V ≈ 0.20), `DiffWalk` and `HeartDiseaseorAttack` (V ≈ 0.22), and `DiffWalk` and `Stroke`
+show the strongest pairwise links, reflecting the clustering of cardiometabolic and functional
+risk. `PhysActivity` shows moderate negative associations with `DiffWalk`, `HighBP`, and
+`HeartDiseaseorAttack`, consistent with its protective role. `HvyAlcoholConsump` and
+`AnyHealthcare` show the weakest associations across the matrix. The diagonal (V = 1.00)
+confirms perfect self-association. This heatmap establishes which binary predictors are
+inter-correlated and therefore need careful treatment in adjusted modelling.
+
+## 3.21 Spearman Correlation Heatmap: Continuous and Ordinal Variables
+
+```{r}
+#| label: spearman-heatmap
+#| fig.height: 7
+#| fig.width: 10
+
+corr_vars <- diab |>
+  transmute(
+    BMI       = BMI,
+    MentHlth  = MentHlth,
+    PhysHlth  = PhysHlth,
+    GenHlth   = as.integer(GenHlth),
+    Age       = as.integer(Age),
+    Education = as.integer(Education),
+    Income    = as.integer(Income)
+  )
+
+spear_mat <- cor(corr_vars, method = "spearman")
+
+spear_tidy <- spear_mat |>
+  as.data.frame() |>
+  rownames_to_column("Var1") |>
+  pivot_longer(-Var1, names_to = "Var2", values_to = "rho") |>
+  mutate(
+    Var1 = factor(Var1, levels = colnames(spear_mat)),
+    Var2 = factor(Var2, levels = colnames(spear_mat))
+  )
+
+ggplot(spear_tidy, aes(x = Var1, y = Var2, fill = rho)) +
+  geom_tile(colour = "white") +
+  geom_text(
+    aes(label = sprintf("%.2f", rho)),
+    size   = 4,
+    colour = "white"
+  ) +
+  scale_fill_gradient2(
+    low      = "#2166AC",
+    mid      = "white",
+    high     = "#D6604D",
+    midpoint = 0,
+    limits   = c(-1, 1),
+    name     = "Spearman's ρ"
+  ) +
+  labs(
+    title = "Spearman rank correlations among continuous and ordinal variables",
+    x     = NULL,
+    y     = NULL
+  ) +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1))
+```
+
+`PhysHlth` and `MentHlth` share a moderate positive correlation (ρ ≈ 0.31), confirming
+co-occurrence of physical and mental health burden. Both correlate positively with `GenHlth`
+(coded 1 = Excellent to 5 = Poor), indicating that higher burden is associated with worse
+self-rated health. `Income` and `Education` are strongly correlated with each other (ρ ≈ 0.45)
+and both show negative correlations with `GenHlth`, `PhysHlth`, and `MentHlth` — confirming
+that higher socioeconomic position is associated with better health outcomes across multiple
+dimensions. `Age` shows a positive correlation with `PhysHlth` and `GenHlth` but near-zero
+with `MentHlth`, consistent with the age patterns in Section 3.4. `BMI` has modest positive
+associations with `GenHlth` and `PhysHlth`, and very weak correlation with `MentHlth`.
+
+Together, Sections 3.20 and 3.21 establish the correlation structure among all key variables,
+identifying which predictors are inter-related and justifying the need for multivariable
+adjustment in all subsequent models.
+
+---
+
+
+---
+
+# 3.22 Statistical Summary and Analytical Implications
+
+This section synthesises the key quantitative findings from Sections 3.1–3.21 into structured
+statistical observations and modelling implications, drawing together patterns across individual
+plots into a coherent account of the dataset's structure and translating these into specific
+analytical consequences for Section 4.
+
+## 3.22.1 Dominant Gradients and Effect Magnitudes
+
+Socioeconomic position is the most consistent and largest-magnitude predictor across all
+non-diabetes outcomes examined. The income gradient in high mental health burden (≥14 days)
+spans approximately 20 percentage points from the lowest to highest band; the equivalent
+gradient in high physical health burden spans approximately 25 percentage points. Both
+substantially exceed any within-income sex difference, which typically lies within 5–7
+percentage points. The Fair/Poor general health gradient across income spans approximately
+40 percentage points (~50% in the lowest band vs. below 10% in the highest). To illustrate
+the inferential magnitude: a simple unadjusted chi-squared test of independence between income
+category and Fair/Poor general health status yields χ²(7) ≈ 14,800, p < 0.001 (N = 253,680),
+with a Cramér's V of approximately 0.24 — confirming that the visual gradients correspond to
+statistically robust associations, not sampling artefacts. These patterns strongly suggest that
+income warrants inclusion as both a primary predictor and a potential effect modifier in any
+adjusted model.
+
+Age effects are comparably large for physical outcomes. Functional limitation (DiffWalk)
+prevalence rises from approximately 2% at age 18–24 to over 30% at 80+. High blood pressure
+and high cholesterol each rise from under 10% to over 60%. Heart disease prevalence rises from
+under 2% to approximately 25% at 80+. These gradients are monotonic or near-monotonic for all
+cardiometabolic and functional outcomes examined. As an illustrative example, a logistic
+regression of DiffWalk on age category (treating the youngest group as reference) yields an
+estimated odds ratio of approximately OR ≈ 20 (95% CI: 17–24) for the 80+ group compared with
+18–24, indicating that the age gradient is not only large in the population but precisely
+estimated. Taken together, these patterns indicate that age warrants treatment as a substantive
+predictor — not merely an adjustment variable — in models of physical and cardiometabolic
+outcomes.
+
+Mental health burden is the exception: mean mentally unhealthy days and high-burden prevalence
+decline after approximately age 60, in contrast to all physical indicators. This reversal
+indicates that a model of `MentHlth` requires a different age specification — likely a
+categorical or quadratic term — relative to models of `PhysHlth` or `GenHlth`.
+
+## 3.22.2 Distributional Properties and Outcome Coding
+
+`MentHlth` and `PhysHlth` are bounded 0–30 integer counts with severe zero-inflation. Standard
+linear regression is not appropriate: it would generate negative fitted values, violate
+homoscedasticity, and produce non-normal residuals at scale. Appropriate alternatives include
+zero-inflated Poisson or negative-binomial models, two-part hurdle models, or — where
+dichotomisation is analytically justified — logistic regression on the binary ≥14-day indicator.
+The ≥14-day threshold is clinically grounded and aligns with population mental health
+surveillance definitions of substantial impairment.
+
+`GenHlth` is a five-level ordered outcome whose monotonic relationship with income (Section 3.1)
+and moderate Spearman correlation with `PhysHlth` (ρ ≈ 0.45, Section 3.21) support proportional-
+odds logistic regression, subject to a formal test of the parallel-lines assumption.
+
+For binary outcomes (`DiffWalk`, `HighBP`, `HighChol`, `Stroke`, `HeartDiseaseorAttack`),
+logistic regression is appropriate. The Cramér's V matrix (Section 3.20) indicates that most
+pairwise associations among these predictors are weak (V < 0.20), with the HighBP–HighChol pair
+(V ≈ 0.30) as the primary exception, suggesting that simultaneous inclusion is unlikely to
+introduce severe multicollinearity, though routine VIF diagnostics remain warranted.
+
+## 3.22.3 Confounding Structure and Adjustment Priority
+
+Socioeconomic position (income and education) is associated with virtually every health outcome
+examined and is also associated with most candidate predictors: physical activity (Section 3.11),
+smoking (Section 3.9), BMI (Section 3.17), and healthcare access (Section 3.16). Unadjusted
+associations between, for example, physical activity and mental health (Section 3.6) therefore
+reflect income confounding of both the exposure and the outcome and are not interpretable as
+independent effects without adjustment.
+
+Age and sex introduce further confounding. The sex crossover in HighBP and HighChol prevalence
+(men higher before approximately age 55–60, women higher or equivalent thereafter; Section 3.15)
+indicates that a main-effects-only model misspecifies the age–sex relationship for cardiometabolic
+outcomes, and that an age × sex interaction term is likely to be warranted. The HighBP–HighChol
+joint prevalence of 17.4% (Section 3.18) substantially exceeds the independence expectation of
+approximately 14% (= 0.43 × 0.34), consistent with a log odds ratio of approximately 0.55,
+indicating meaningful clustering that warrants collinearity checking in any model including both.
+
+## 3.22.4 Variables with Weak Independent Signal
+
+`HvyAlcoholConsump` shows Cramér's V values below 0.10 with nearly all other binary variables
+(Section 3.20), a small declining age gradient peaking at around 8% in the youngest groups
+(Section 3.10), and minimal sex differences at any age. No meaningful gradient with any health
+outcome is apparent from the EDA. It may reasonably be retained as a theoretical covariate but
+is unlikely to improve model fit appreciably.
+
+`BMI` shows weak Spearman correlations with `MentHlth` (ρ ≈ 0.05) and near-zero correlation
+with `Age` (ρ ≈ −0.02), consistent with limited predictive relevance for mental health models.
+Its signal is outcome-specific: the BMI–DiffWalk gradient (Section 3.14) indicates that obese
+individuals have approximately three times the difficulty-walking prevalence of normal-weight
+individuals, a pattern large enough to translate into a clinically meaningful odds ratio.
+Accordingly, BMI is best treated as a primary predictor in functional limitation models and as a
+low-priority covariate in models of `MentHlth`.
+
+## 3.22.5 Summary Table of Key EDA Findings
+
+```{r}
+#| label: eda-summary-table
+#| echo: false
+
+eda_summary <- tibble::tribble(
+  ~Finding,                                                      ~Outcome,           ~Implication,
+  "Income gradient: ~25pp in high PhysHlth burden",             "PhysHlth",         "Primary predictor; test income × sex interaction",
+  "Income gradient: ~20pp in high MentHlth burden",             "MentHlth",         "Primary predictor; larger gap among women at low income",
+  "Income gradient: ~40pp in Fair/Poor GenHlth; V ≈ 0.24",     "GenHlth",          "Strongest single predictor; ordered logistic model",
+  "MentHlth peaks at 25–39, declines after age 60",             "MentHlth",         "Non-linear age term indicated; avoid raw linear age",
+  "PhysHlth and GenHlth rise monotonically with age",           "PhysHlth/GenHlth", "Ordinal age term appropriate; OR ≈ 20 at 80+ for DiffWalk",
+  "HighBP/HighChol sex crossover ~age 55–60",                   "HighBP/HighChol",  "Age × sex interaction likely warranted",
+  "HighBP–HighChol V = 0.30; joint prev = 17.4% > 14% indep.", "HighBP/HighChol",  "Log OR ≈ 0.55; VIF check required if both in model",
+  "PhysActivity × DiffWalk V = 0.25",                           "DiffWalk",         "DiffWalk is a confounder of activity–health associations",
+  "High-burden MentHlth ~50% lower in physically active group", "MentHlth",         "PhysActivity: key predictor; adjust for income and age",
+  "MentHlth and PhysHlth severely zero-inflated",               "MentHlth/PhysHlth","Hurdle/ZI model or ≥14-day binary outcome; not OLS",
+  "HvyAlcohol: V < 0.10 with most variables; flat gradient",    "All",              "Weak signal; retain as theoretical covariate only",
+  "BMI: ρ = 0.05 with MentHlth; obese ~3× DiffWalk rate",      "MentHlth/DiffWalk","Outcome-specific role; primary for DiffWalk, weak for MH"
+)
+
+knitr::kable(
+  eda_summary,
+  col.names = c("Key finding", "Primary outcome", "Modelling implication"),
+  booktabs  = TRUE,
+  longtable = FALSE,
+  caption   = "Summary of key EDA findings and their modelling implications."
+)
+```
+
+These findings collectively define the analytical landscape for Section 4: which predictors
+carry the strongest signal for each outcome, where interaction or non-linear terms are
+indicated, and which distributional properties preclude standard linear modelling.
+
+---
+
+*Section 4 (Finalised Research Questions) and Section 5 (Modelling) follow.*
