@@ -41,8 +41,12 @@ library(shapviz)
 library(knitr)
 library(probably)
 library(conflicted)
-library(vip)
 library(doParallel)
+library(pscl)
+library(lmtest)
+library(marginaleffects)   
+library(ggeffects)
+library(MASS)
 
 tidymodels_prefer(quiet = TRUE)
 conflicts_prefer(yardstick::accuracy)
@@ -1781,11 +1785,11 @@ unhealthy days in the past 30 days (0–30)
 
 **Research Question**
 
-> *To what extent do income, education, physical activity, smoking, and
-> heavy alcohol consumption predict the number of mentally unhealthy
-> days reported in the past 30 days, and does the association between
-> physical activity and mental health burden differ across income
-> groups?*
+> *To what extent do socioeconomic position (income, education),
+> lifestyle behaviours (physical activity, smoking), and physical health
+> burden predict the number of mentally unhealthy days reported in the
+> past 30 days, and do the protective associations of physical activity
+> differ across income and education strata?*
 
 **Rationale**
 
@@ -2141,7 +2145,6 @@ pretty_autoplot <- function(x, metric, ylab, title) {
       x = "Workflow rank (best → worst)",
       y = ylab
     ) +
-    scale_x_continuous(breaks = pretty_breaks(n = 1)) +
     scale_y_continuous(labels = percent_format(accuracy = 0.1))
 }
 ```
@@ -2225,16 +2228,16 @@ compared with the other modelling approaches.
 rf_res  <- extract_workflow_set_result(wf_set_rq1_fit, "rq1_recipe_rf")
 xgb_res <- extract_workflow_set_result(wf_set_rq1_fit, "rq1_recipe_xgb")
 
-# Select best hyperparameters using Macro F1
+
 best_rf  <- select_best(rf_res, metric = "f_meas")
 best_xgb <- select_best(xgb_res, metric = "f_meas")
 
-# Extract workflows
+
 rf_wf       <- extract_workflow(wf_set_rq1_fit, "rq1_recipe_rf")
 xgb_wf      <- extract_workflow(wf_set_rq1_fit, "rq1_recipe_xgb")
 multinom_wf <- extract_workflow(wf_set_rq1_fit, "rq1_recipe_multinom")
 
-# Finalise tuned workflows
+
 rf_final_wf  <- finalize_workflow(rf_wf, best_rf)
 xgb_final_wf <- finalize_workflow(xgb_wf, best_xgb)
 
@@ -2244,39 +2247,29 @@ multinom_final_wf <- multinom_wf
 
 ```{r}
 #| label: final-fit
-rf_final_fit       <- fit(rf_final_wf, data = diab_test)
-xgb_final_fit      <- fit(xgb_final_wf, data = diab_test)
-multinom_final_fit <- fit(multinom_final_wf, data = diab_test)
+rf_final_fit <- rf_final_wf |> last_fit(diabetes_split)
+
+xgb_final_fit <- xgb_final_wf |> last_fit(diabetes_split)
+
+multinom_final_fit <- multinom_final_wf |> last_fit(diabetes_split)
 ```
 
 ## 6.4 Model Evaluation
 
 ```{r}
-#| include: false
+pred_rf <- rf_final_fit |>
+  collect_predictions() |>
+  mutate(model = "Random forest")
 
-get_test_preds <- function(fit, model_name, data, truth_col = Diabetes) {
-  p_class <- predict(fit, data, type = "class")
-  p_prob  <- predict(fit, data, type = "prob")
-  bind_cols(
-    data |> select({{ truth_col }}),
-    p_class,
-    p_prob
-  ) |>
-    mutate(model = model_name)
-}
-```
+pred_xgb <- xgb_final_fit |>
+  collect_predictions() |>
+  mutate(model = "XGBoost")
 
-```{r}
-pred_rf  <- get_test_preds( rf_final_fit,       
-                            "Random forest", diab_test, Diabetes)
-pred_xgb <- get_test_preds(xgb_final_fit,      
-                           "XGBoost",       diab_test, Diabetes)
-pred_mn  <- get_test_preds(multinom_final_fit, 
-                           "Multinomial",   diab_test, Diabetes)
+pred_mn <- multinom_final_fit |>
+  collect_predictions() |>
+  mutate(model = "Multinomial")
 
-pred_all <- bind_rows(pred_rf, pred_xgb, pred_mn)
-
-pred_all <- pred_all |>
+pred_all <- bind_rows(pred_rf, pred_xgb, pred_mn) |>
   rename(.pred_No_diabetes = `.pred_No diabetes`)
 ```
 
@@ -2284,45 +2277,24 @@ pred_all <- pred_all |>
 #| label: rq1-test-metrics
 #| message: false
 #| warning: false
-#| include: false
 
-class_metrics <- pred_all |>
-  group_by(model) |>
-  metric_set(accuracy, bal_accuracy, kap, f_meas)(
-    truth = Diabetes,
-    estimate = .pred_class)
+metrics_rf <- rf_final_fit |>
+  collect_metrics() |>
+  mutate(model = "Random forest")
 
-roc_metrics <- pred_all |>
-  group_by(model) |>
-  roc_auc(
-    truth = Diabetes,
-    .pred_No_diabetes,
-    .pred_Prediabetes,
-    .pred_Diabetes,
-    estimator = "macro"
-  )
+metrics_xgb <- xgb_final_fit |>
+  collect_metrics() |>
+  mutate(model = "XGBoost")
 
-final_metrics <- bind_rows(class_metrics, roc_metrics) |>
-  mutate(estimator = if_else(is.na(.estimator), "overall", .estimator)) |>
-  select(model, .metric, .estimator, .estimate) |>
-  arrange(match(.metric, c("f_meas","bal_accuracy","roc_auc","kap","accuracy")), model)
+metrics_mn <- multinom_final_fit |>
+  collect_metrics() |>
+  mutate(model = "Multinomial")
 
-final_metrics
-```
+metrics_all <- bind_rows(metrics_rf, metrics_xgb, metrics_mn)
 
-```{r}
-#| label: rq1-roc-combined-prep
-#| message: false
-#| warning: false
-
-roc_all <- pred_all |>
-  group_by(model) |>
-  roc_curve(
-    truth = Diabetes,
-    .pred_No_diabetes,
-    .pred_Prediabetes,
-    .pred_Diabetes
-  )
+metrics_wide <- metrics_all |>
+  select(model, .metric, .estimate) |>
+  pivot_wider(names_from = .metric, values_from = .estimate)
 ```
 
 ### 6.4.1 ROC Curves
@@ -2353,6 +2325,14 @@ three classes demonstrate robust multiclass discrimination.
 #| message: false
 #| warning: false
 
+roc_all <- pred_all |>
+  group_by(model) |>
+  roc_curve(
+    truth = Diabetes,
+    .pred_No_diabetes,
+    .pred_Prediabetes,
+    .pred_Diabetes)
+
 autoplot(roc_all) +
   labs(
     title = "Multiclass ROC curves (one-vs-rest) — Test set",
@@ -2360,8 +2340,7 @@ autoplot(roc_all) +
     y = "Sensitivity"
   ) +
   theme(
-    legend.position = 'bottom'
-  )
+    legend.position = 'bottom')
 ```
 
 The multiclass ROC curves provide additional insight into discrimination
@@ -3288,19 +3267,131 @@ final_xgb_fit |>
 > risk, with demographic and behavioural factors playing a secondary
 > role in predicting heart disease status.
 
-## 7.5 SHAP-Based Model Interpretation
+## 7.5 Formal Tests of Socioeconomic Moderation
 
-To interpret the predictions of the final XGBoost model, SHAP (SHapley
-Additive exPlanations) values are computed. SHAP provides a
-model-agnostic framework for explaining complex machine learning models
-by decomposing each prediction into additive contributions from
-individual predictors.
+### 7.5.1 Logistic Regression Interaction Models
 
-Because the test dataset is large, a random sample of 5,000 observations
-is drawn to make the SHAP computation tractable while still providing a
-representative explanation of the model’s behaviour. The predictors used
-for explanation correspond to the processed feature matrix used by the
-fitted XGBoost engine.
+To formally evaluate socioeconomic moderation, logistic regression
+models including interaction terms between key clinical risk factors
+(HighBP, HighChol, BMI) and socioeconomic indicators (Income and
+Education) were estimated. These interaction terms allow the association
+between clinical risk factors and heart disease to vary across
+socioeconomic strata.
+
+**1. Baseline main-effects model**
+
+```{r}
+dim(model.matrix(
+  HeartDiseaseorAttack ~ HighBP + HighChol + BMI +
+    Age + Sex + Income + Education +
+    Smoker + PhysActivity,
+  data = heart_train
+))
+```
+
+```{r}
+#| label: base-rq2
+mod_main <- glm(
+  HeartDiseaseorAttack ~ HighBP + HighChol + BMI +
+    Age + Sex + Income + Education +
+    Smoker + PhysActivity,
+  data = heart_train,
+  family = binomial()
+)
+```
+
+**2. Income interaction model**
+
+```{r}
+#| label: income-inter-rq2
+mod_income <- glm(
+  HeartDiseaseorAttack ~ (HighBP + HighChol + BMI) * Income +
+    Age + Sex + Education +
+    Smoker + PhysActivity,
+  data = heart_train,
+  family = binomial()
+)
+```
+
+**3. Education interaction model**
+
+```{r}
+#| label: edu-inter-rq2
+mod_edu <- glm(
+  HeartDiseaseorAttack ~ (HighBP + HighChol + BMI) * Education +
+    Age + Sex + Income +
+    Smoker + PhysActivity,
+  data = heart_train,
+  family = binomial()
+)
+
+```
+
+## 7.5.2 Likelihood Ratio Tests
+
+This subsection formally tests whether adding interaction terms
+**improves model fit** relative to the baseline model.
+
+**1. Income moderation test**
+
+```{r}
+lrt_income <- anova(mod_main, mod_income, test = "Chisq")
+```
+
+**2. Education moderation test**
+
+```{r}
+lrt_edu <- anova(mod_main, mod_edu, test = "Chisq")
+```
+
+```{r}
+lrt_income
+lrt_edu
+```
+
+### 7.5.3 Interpretation of Moderation Effects
+
+Likelihood ratio tests were used to compare the baseline logistic
+regression model containing only main effects with models that
+additionally included interaction terms between key clinical risk
+factors (HighBP, HighChol, BMI) and socioeconomic indicators (Income and
+Education). These tests assess whether allowing the effects of clinical
+predictors to vary across socioeconomic strata improves model fit.
+
+The model including interactions between clinical risk factors and
+income significantly improved model fit relative to the baseline
+specification ($Δχ² = 49.40, df = 21, p < 0.001$). Similarly, the model
+including interactions between clinical predictors and education also
+produced a statistically significant improvement in fit
+($Δχ² = 31.18, df = 15, p = 0.008$). These results indicate that the
+relationships between key cardiometabolic risk factors and heart disease
+are not constant across socioeconomic groups. Instead, the strength of
+these associations varies across levels of income and educational
+attainment.
+
+However, while statistically significant, these interaction effects
+should be interpreted with caution. Given the large sample size of the
+dataset (approximately 190,000 observations), even relatively small
+deviations from the additive model can produce statistically significant
+likelihood ratio tests. As such, the presence of moderation should be
+interpreted as evidence that socioeconomic position contributes to
+heterogeneity in the association between clinical risk factors and heart
+disease risk, rather than as evidence of large effect modification.
+
+To further explore the structure and magnitude of these interaction
+effects in a more flexible modelling framework, the following section
+uses SHAP-based interpretation of the XGBoost model to examine how
+predicted contributions of clinical risk factors vary across
+socioeconomic strata.
+
+## 7.6 SHAP-Based Model Interpretation
+
+The likelihood ratio tests provided formal evidence that interactions
+between key clinical risk factors and socioeconomic indicators improved
+model fit. To further examine the structure of these moderation effects,
+SHAP-based interpretation of the final XGBoost model was used to explore
+how interaction patterns varied across observations in a nonlinear
+setting.
 
 ```{r}
 #| label: shapviz-rq2
@@ -3438,45 +3529,114 @@ sv_importance(shp_flipped, kind = "beeswarm", max_display = 15) +
 > demographic and socioeconomic factors contribute secondary adjustments
 > to predicted heart disease risk.
 
-### 7.5.3 SHAP Dependence Analysis
+### 7.6.3 Global Interaction Strengths
 
-SHAP dependence plots are used to examine how the effect of key clinical
-risk factors on predicted heart disease risk varies across levels of
-socioeconomic status. Unlike global SHAP importance measures, dependence
-plots allow the relationship between a specific predictor and the model
-output to be visualised while simultaneously colouring observations by a
-second variable.
-
-In this analysis, the plots are used to explore whether socioeconomic
-determinants, specifically income and education, moderate the impact of
-major clinical risk factors. By visualising SHAP values for variables
-such as high blood pressure, high cholesterol, general health, and BMI
-while colouring observations by socioeconomic indicators, it becomes
-possible to assess whether the contribution of these clinical predictors
-differs across socioeconomic groups.
-
-This approach directly addresses the research question by investigating
-whether complex interaction effects between socioeconomic determinants
-and clinical risk factors are captured by the XGBoost model, and whether
-these interactions provide insights beyond traditional additive
-modelling assumptions.
-
-#### **Clinical Risk Factors by Income**
+To examine whether predictors jointly influence model predictions, SHAP
+interaction values were computed using the `sv_interaction()` function.
+Unlike standard SHAP importance measures, which quantify the independent
+contribution of each feature, SHAP interaction values capture how pairs
+of predictors interact within the model to influence predicted heart
+disease risk. This provides a global overview of the strength of
+pairwise interactions learned by the XGBoost model.
 
 ```{r}
-#| label: income-dependence
+#| label: shap-interaction
+if (!file.exists("shp_i.rds")) {
+  shp_i <- shapviz(xgb_engine, X_pred = X_sample, interactions = TRUE)
+  write_rds(shp_i, "shp_i.rds")
+} else {
+  shp_i <- read_rds("shp_i.rds")
+}
+```
+
+```{r}
+#| label: shp-pairwise
+#| fig-height: 10
+#| fig-width: 18
+sv_interaction(shp_i)
+```
+
+The interaction summary plot indicates that most pairwise interactions
+in the model are relatively small, with the majority of SHAP interaction
+values concentrated near zero. This suggests that much of the predictive
+signal in the model arises from additive effects of individual
+predictors rather than strong nonlinear interactions.
+
+Among the predictors displayed, age and general health status exhibit
+the largest overall influence on predicted heart disease risk. The
+distribution of SHAP values for age shows a clear gradient, where higher
+age values are associated with increasingly positive SHAP contributions,
+indicating a higher predicted risk of heart disease. Similarly, poorer
+self-reported general health is associated with positive SHAP
+contributions, reflecting its strong relationship with cardiovascular
+outcomes.
+
+Clinical risk factors such as high blood pressure and high cholesterol
+also show visible contributions, although their interaction effects with
+other variables appear relatively modest. The SHAP values for these
+variables are clustered around small positive values when the risk
+factor is present, indicating that they consistently increase predicted
+risk but do not strongly interact with other predictors in a nonlinear
+manner.
+
+Behavioural and functional indicators such as smoking status and
+difficulty walking display smaller interaction magnitudes overall. While
+these variables contribute to predictions individually, the interaction
+plot suggests that their joint effects with other predictors are limited
+relative to major clinical and demographic risk factors.
+
+Overall, the interaction summary indicates that the model is primarily
+driven by strong main effects, with interactions playing a secondary
+role. Nevertheless, the presence of some spread in the interaction
+distributions suggests that certain predictors may still exhibit
+heterogeneous effects across subgroups. The following subsection
+therefore examines targeted SHAP dependence plots to explore how
+clinical risk factors interact with socioeconomic indicators such as
+income and education.
+
+### 7.6.4 Targeted Dependence Analysis
+
+To examine the moderation patterns more directly, targeted SHAP
+dependence plots areproduced for the most relevant clinical risk
+factor–socioeconomic variable combinations. Based on the formal
+interaction tests and the substantive focus of RQ2, attention was
+restricted to interactions between key cardiometabolic risk factors
+(`HighBP`, `HighChol`) and the socioeconomic indicators `Income` and
+`Education`.
+
+#### **Income interactions**
+
+```{r}
+#| label: income-trgt-dependence
 #| dev: png
-#| fig-height: 9
-#| fig-width: 16
+#| fig-height: 10
+#| fig-width: 14
 
-p1 <- sv_dependence(shp_flipped, v = "HighBP_High", color_var = "Income")
-p2 <- sv_dependence(shp_flipped, v = "HighChol_High", color_var = "Income")
-p3 <- sv_dependence(shp_flipped, v = "GenHlth", color_var = "Income")
-p4 <- sv_dependence(shp_flipped, v = "BMI", color_var = "Income")
+p_inc_bp <- sv_dependence(shp_i,v = "HighBP_High",
+                          color_var = "Income",
+                          interactions = TRUE) +
+  labs(title = "High Blood Pressure by Income",
+       x = "HighBP",
+       y = "Interaction SHAP Value")
 
-(p1 + p2) / (p3 + p4) +
-  plot_layout(guides = "collect") &
-  theme(legend.position = "bottom")
+p_inc_chol <- sv_dependence(shp_i,v = "HighChol_High",
+                            color_var = "Income",
+                            interactions = TRUE) +
+  labs(title = "High Cholesterol by Income",
+    x = "HighChol",
+    y = "Interaction SHAP Value")
+
+p_inc_bmi <- sv_dependence(shp_i,v = "BMI",
+                           color_var = "Income",
+                           interactions = TRUE) +
+  labs(title = "BMI by Income",x = "BMI",y = "Interaction SHAP Value")
+
+p_inc_gen <- sv_dependence(shp_i,v = "GenHlth",
+                           color_var = "Income",interactions = TRUE) +
+  labs(title = "General Health by Income",x = "General Health",
+       y = "Interaction SHAP Value")
+
+(p_inc_bp | p_inc_chol) / (p_inc_gen | p_inc_bmi)
 ```
 
 > The dependence plots illustrate how the contribution of key clinical
@@ -3526,83 +3686,86 @@ p4 <- sv_dependence(shp_flipped, v = "BMI", color_var = "Income")
 ```{r}
 #| label: edu-dependence
 #| dev: png
-#| fig-height: 9
-#| fig-width: 16
+#| fig-height: 10
+#| fig-width: 14
 
-p5 <- sv_dependence(shp_flipped, v = "HighBP_High", color_var = "Education")
-p6 <- sv_dependence(shp_flipped, v = "HighChol_High", color_var = "Education")
-p7 <- sv_dependence(shp_flipped, v = "GenHlth", color_var = "Education")
-p8 <- sv_dependence(shp_flipped, v = "BMI", color_var = "Education")
+p_edu_bp <- sv_dependence(shp_i,v = "HighBP_High",
+                          color_var = "Education",
+                          interactions = TRUE) +
+  labs(title = "High Blood Pressure by Education",x = "HighBP",
+       y = "Interaction SHAP Value")
 
-(p5 + p6) / (p7 + p8) +
-  plot_layout(guides = "collect") &
-  theme(legend.position = "bottom")
+p_edu_chol <- sv_dependence(shp_i,v = "HighChol_High",
+                            color_var = "Education",
+                            interactions = TRUE) +
+  labs(title = "High Cholesterol by Education",
+       x = "HighChol",
+       y = "Interaction SHAP Value")
+
+p_edu_bmi <- sv_dependence(shp_i,v = "BMI",
+                           color_var = "Education",
+                           interactions = TRUE) +
+  labs(title = "BMI by Education",x = "BMI",y = "Interaction SHAP Value")
+
+p_edu_gen <- sv_dependence(shp_i,v = "GenHlth",color_var = "Education",
+                           interactions = TRUE) +
+  labs(title = "General Health by Education",x = "General Health",
+       y = "Interaction SHAP Value")
+
+(p_edu_bp | p_edu_chol) / (p_edu_gen | p_edu_bmi)
 ```
 
-> When coloured by education rather than income, the SHAP dependence
-> plots show a very similar overall structure. High blood pressure and
-> high cholesterol both produce clear upward shifts in SHAP values when
-> present, indicating that these conditions contribute positively to
-> predicted heart disease risk. However, the colour distribution is
-> broadly mixed within each cluster, providing little visual evidence
-> that educational attainment substantially changes the effect of either
-> condition.
+> The SHAP dependence plots examining interactions between clinical
+> predictors and education levels show generally weak interaction
+> effects across the variables considered. In contrast to the income
+> plots, most SHAP interaction values are tightly clustered around zero,
+> indicating that education has limited influence on how these clinical
+> factors contribute to predicted heart disease risk within the model.
 >
-> General health again shows the clearest monotonic relationship with
-> model output. As self-reported health worsens, SHAP values increase
-> steadily from negative to strongly positive, indicating progressively
-> greater predicted cardiovascular risk. Although observations from
-> different education levels are present within each category, the
-> dominant pattern is the strong main effect of general health rather
-> than a clear education-based separation.
+> For high blood pressure, the interaction values are effectively zero
+> across all observations. Both the absence and presence of high blood
+> pressure show no visible spread in SHAP interaction values, and the
+> colour distribution representing education levels appears uniform
+> across the points. This suggests that the contribution of high blood
+> pressure to predicted heart disease risk is largely independent of
+> educational attainment in the model.
 >
-> BMI continues to display a comparatively weak and diffuse pattern.
-> Most SHAP contributions remain close to zero, with only modest
-> positive contributions at the lower end and slight negative
-> contributions across much of the mid-range. Educational levels are
-> intermingled throughout the plot, suggesting limited moderation of the
-> BMI effect by education.
+> The high cholesterol plot shows slightly more variation than high
+> blood pressure, but the magnitude of interaction effects remains very
+> small. A few observations exhibit minor positive or negative
+> interaction values, particularly among lower education levels, but
+> these deviations are sparse and remain close to zero overall. As a
+> result, there is little evidence that education meaningfully alters
+> the predicted risk contribution of high cholesterol.
 >
-> Overall, the education-coloured dependence plots provide little
-> evidence that educational attainment strongly moderates the
-> relationship between these clinical risk factors and predicted heart
-> disease risk. As with the income-based plots, the dominant signal
-> comes from the direct contribution of the clinical variables
-> themselves. This suggests that, within the XGBoost model,
-> socioeconomic moderation by education is limited for these particular
-> predictors.
+> The interaction between general health and education also appears
+> minimal. While poorer self-reported health is associated with
+> increasing main SHAP contributions elsewhere in the analysis, the
+> interaction values here remain very small and centered around zero.
+> Education levels are distributed across the entire range of SHAP
+> values without any clear systematic gradient.
+>
+> Similarly, BMI shows virtually no interaction with education. The SHAP
+> interaction values form a flat horizontal band at zero across the
+> entire range of BMI values, indicating that the model does not detect
+> any meaningful interaction between body mass index and educational
+> attainment when predicting heart disease risk.
+>
+> Overall, these results suggest that educational attainment does not
+> substantially modify the relationship between the examined clinical
+> risk factors and predicted heart disease risk in the XGBoost model.
+> Although the earlier likelihood ratio test indicated a statistically
+> significant interaction block for education, the SHAP visualisations
+> suggest that the magnitude of these interaction effects is very small
+> and unlikely to be substantively important in practical terms.
 
-### 7.5.4 Local SHAP Explanations: Individual-Level Predictions
+### 7.6.5 Local Explanations
 
-To complement the global interpretation of the model, SHAP local
-explanation plots are used to examine how individual predictions are
-formed. Two observations are selected: the individual with the highest
-predicted risk of heart disease and the individual with the lowest
-predicted risk. These cases are identified by selecting the rows with
-the largest and smallest total SHAP contributions across all features.
-
-The waterfall plots show how each predictor shifts the model output away
-from the baseline prediction for a specific individual. Features with
-positive SHAP values increase the predicted probability of heart
-disease, while negative values decrease it. For the highest-risk
-individual, several clinical variables contribute positively to the
-prediction, cumulatively pushing the model output well above the
-baseline. In contrast, for the lowest-risk individual, protective
-factors or the absence of risk conditions contribute negatively, pulling
-the prediction below the baseline.
-
-The force plots provide a complementary visualisation of the same
-explanations by displaying how features push the prediction toward
-higher or lower risk simultaneously. Red features indicate variables
-increasing predicted heart disease risk, while blue features indicate
-variables decreasing it.
-
-These local explanations demonstrate how the XGBoost model combines
-multiple demographic, clinical, and socioeconomic predictors to generate
-individual-level predictions. This illustrates the model’s ability to
-capture complex interactions and heterogeneous effects across
-individuals, providing interpretable insights beyond aggregate feature
-importance measures.
+To complement the global and interaction-level interpretations, local
+explanation plots were generated for individual predictions. These plots
+decompose a single prediction into feature-level contributions,
+illustrating how different variables increase or decrease predicted
+heart disease risk relative to the model baseline.
 
 ```{r}
 #| label: high-low-risk-shap
@@ -3661,341 +3824,63 @@ smoking, and diabetes, further reduces the predicted risk. Female sex
 and higher income also contribute modestly toward lowering the
 prediction.
 
-These local explanations demonstrate how the XGBoost model integrates
-multiple predictors to generate individual-level predictions. High
-predicted risk emerges when several clinical risk factors accumulate
-simultaneously, whereas low predicted risk arises from the combination
-of younger age, good health status, and the absence of cardiometabolic
-conditions.
+### Summary of SHAP-Based Model Interpretation
 
-### 7.5.5 SHAP Interaction Analysis
+**Global Feature Importance and Main Effects.**\
+The SHAP importance and distribution plots indicate that the model is
+primarily driven by strong main effects from demographic and clinical
+variables, particularly age and general health status. These predictors
+consistently produce the largest SHAP contributions, suggesting that
+worsening health status and increasing age substantially raise predicted
+heart disease risk. Other clinical risk factors such as high blood
+pressure and high cholesterol also contribute positively to predicted
+risk, though to a lesser extent.
 
-To further investigate whether the model captures complex relationships
-between predictors, SHAP interaction values are computed for the XGBoost
-model. While standard SHAP values quantify the independent contribution
-of each feature to the prediction, SHAP interaction values decompose
-these effects into pairwise feature interactions.
+**Interaction Structure of the Model.**\
+The SHAP interaction analysis shows that most predictor relationships
+are largely additive. Pairwise interaction values are generally
+concentrated near zero, indicating that the model relies mainly on
+independent feature effects rather than strong nonlinear interactions.
+Although earlier logistic regression tests detected statistically
+significant socioeconomic interactions, the SHAP interaction magnitudes
+appear relatively small in practice.
 
-This allows the model output to be examined in terms of how two
-variables jointly influence predictions rather than assuming purely
-additive effects. Such interactions are particularly relevant for the
-research question, which investigates whether socioeconomic determinants
-such as income and education modify the impact of clinical risk factors
-on heart disease prevalence.
+**Income-Based Heterogeneity.**\
+Targeted dependence plots suggest some variation in how clinical risk
+factors contribute to predicted risk across income levels. In
+particular, high blood pressure, high cholesterol, and general health
+show modest differences in SHAP contributions across income categories.
+Lower income groups occasionally display slightly larger positive
+contributions, indicating some heterogeneity in risk accumulation across
+socioeconomic strata. However, BMI shows little interaction with income.
 
-By computing SHAP interaction values, it becomes possible to identify
-which pairs of variables most strongly interact within the model and to
-determine whether socioeconomic variables meaningfully alter the
-contribution of key clinical predictors. This provides a more detailed
-understanding of whether the non-linear modelling approach captures
-interaction effects beyond traditional additive assumptions.
+**Education-Based Effects.**\
+In contrast, the education-based dependence plots show minimal
+interaction effects. SHAP interaction values for high blood pressure,
+BMI, and general health remain tightly clustered around zero across
+education levels, suggesting that educational attainment does not
+substantially alter the model’s estimated contribution of these
+predictors. This indicates that while statistical interaction terms were
+detected earlier, their practical magnitude appears small.
 
-```{r}
-#| label: shap-interaction
-if (!file.exists("shp_i.rds")) {
-  shp_i <- shapviz(xgb_engine, X_pred = X_sample, interactions = TRUE)
-  write_rds(shp_i, "shp_i.rds")
-} else {
-  shp_i <- read_rds("shp_i.rds")
-}
-```
+**Local Prediction Explanations.**\
+Local SHAP explanations illustrate how individual predictions are formed
+by combining multiple feature contributions. High-risk individuals are
+typically characterised by older age, poorer general health, and the
+presence of cardiometabolic risk factors such as hypertension or
+diabetes. Conversely, low-risk individuals tend to be younger, report
+better health, and lack major cardiovascular risk factors. These
+case-level explanations confirm that the model’s predictions align with
+well-established epidemiological risk patterns.
 
-#### SHAP Pairwise Interactions
-
-The SHAP interaction plot summarises the strength of pairwise
-interactions between predictors in the XGBoost model. Interaction
-strength reflects how much two variables jointly influence predictions
-beyond their individual contributions.
-
-This visualisation helps identify whether important predictors operate
-largely independently or whether meaningful interaction effects are
-present. In the context of this research question, the interaction
-matrix is used to assess whether socioeconomic variables such as income
-and education meaningfully interact with clinical risk factors in
-shaping predicted heart disease risk.
-
-```{r}
-#| fig-height: 12
-#| fig-width: 16
-#| dev: png
-
-sv_interaction(shp_i) +
-  labs(title = "SHAP Pairwise Interaction Strengths") 
-```
-
-The SHAP interaction plot highlights the strength and direction of
-pairwise interactions between key predictors in the XGBoost model. Each
-panel shows how the contribution of one feature varies depending on the
-value of another feature, allowing interaction effects to be examined
-beyond simple additive relationships.
-
-The strongest patterns are observed for age and general health, which
-display wide spreads of SHAP values across several panels. This
-indicates that these variables not only have strong independent effects
-but also interact with multiple other predictors when determining heart
-disease risk. In particular, the interaction between age and general
-health shows substantial variation, suggesting that the effect of
-worsening health status becomes more pronounced among older individuals.
-
-Interactions involving clinical risk factors such as high blood pressure
-and high cholesterol are present but appear more limited in magnitude.
-Their effects are largely consistent across other predictors, indicating
-that these variables contribute relatively stable increases in predicted
-risk rather than strongly interacting with other features.
-
-Demographic and behavioural variables, including sex, smoking, and
-difficulty walking, show smaller interaction spreads. These predictors
-appear to contribute modest adjustments to risk but do not display
-strong pairwise interaction patterns with the primary clinical
-variables.
-
-Overall, the interaction matrix suggests that the XGBoost model captures
-some non-additive relationships, particularly involving age and general
-health. However, most other predictors exhibit relatively weak
-interaction effects, indicating that much of the model’s predictive
-signal is still driven by the direct contributions of key clinical and
-demographic variables rather than strong pairwise interactions.
-
-### 7.5.6 SHAP Interaction Dependence
-
-These SHAP interaction dependence plots are used to explore whether the
-contribution of key clinical risk factors to predicted heart disease
-risk varies across socioeconomic groups. By visualising interaction SHAP
-values while colouring observations by socioeconomic variables, the
-plots allow potential moderation effects to be examined.
-
-Unlike standard dependence plots, interaction SHAP values isolate the
-portion of a feature’s effect that arises specifically from interactions
-with other predictors. This enables the identification of non-additive
-relationships within the model and helps assess whether socioeconomic
-determinants modify the influence of clinical risk factors on predicted
-heart disease risk.
-
-#### Income Moderation
-
-```{r}
-#| fig-height: 9
-#| fig-width: 16
-#| dev: png
-
-p1 <- sv_dependence(
-  shp_i,
-  v = "HighBP_High",
-  color_var = "Income",
-  interactions = TRUE) +
-  labs(
-    title = "HighBP × Income",
-    x = "HighBP",
-    y = "Interaction SHAP Value")
-
-p2 <- sv_dependence(
-  shp_i,
-  v = "HighChol_High",
-  color_var = "Income",
-  interactions = TRUE) +
-  labs(
-    title = "HighChol × Income",
-    x = "HighChol",
-    y = "Interaction SHAP Value")
-
-p3 <- sv_dependence(
-  shp_i,
-  v = "GenHlth",
-  color_var = "Income",
-  interactions = TRUE) +
-  labs(
-    title = "GenHlth × Income",
-    x = "General Health",
-    y = "Interaction SHAP Value")
-
-p4 <- sv_dependence(
-  shp_i,
-  v = "BMI",
-  color_var = "Income",
-  interactions = TRUE) +
-  labs(
-    title = "BMI × Income",
-    x = "BMI",
-    y = "Interaction SHAP Value")
-
-(p1 + p2) / (p3 + p4) +
-  plot_layout(guides = "collect") &
-  theme(legend.position = "bottom")
-```
-
-The interaction dependence plots illustrate how the contribution of key
-clinical risk factors to predicted heart disease risk varies across
-income levels when interaction effects are explicitly isolated.
-
-For high blood pressure, interaction SHAP values remain tightly
-clustered around zero for both categories of the variable. Although the
-presence of high blood pressure increases predicted risk overall, the
-interaction component with income appears minimal, indicating that
-income does not substantially alter the effect of this condition in the
-model.
-
-A similar pattern is observed for high cholesterol. The interaction
-values show limited spread and remain close to zero across income
-levels, suggesting that the influence of high cholesterol on heart
-disease risk is largely independent of income.
-
-General health displays slightly greater variation in interaction SHAP
-values, particularly for poorer health categories. However, while income
-levels are distributed across the observations, there is no strong or
-systematic separation by income group. This suggests that worsening
-health increases predicted risk consistently across income levels rather
-than being strongly moderated by socioeconomic status.
-
-The BMI interaction plot shows very small interaction values across the
-majority of observations, indicating that BMI contributes little through
-interaction effects with income. Most points remain close to zero,
-suggesting that any influence of BMI on predicted risk operates largely
-through its direct effect rather than through socioeconomic moderation.
-
-Overall, the interaction SHAP values indicate that while the XGBoost
-model captures complex non-linear relationships, the interaction between
-income and these clinical risk factors is relatively weak. The primary
-contribution to predicted heart disease risk therefore appears to come
-from the direct effects of the clinical variables themselves rather than
-strong socioeconomic interaction effects.
-
-```{r}
-#| fig-height: 9
-#| fig-width: 16
-#| dev: png
-p5 <- sv_dependence(
-  shp_i,
-  v = "HighBP_High",
-  color_var = "Education",
-  interactions = TRUE) +
-  labs(
-    title = "HighBP × Education",
-    x = "HighBP",
-    y = "Interaction SHAP Value")
-
-p6 <- sv_dependence(
-  shp_i,
-  v = "HighChol_High",
-  color_var = "Education",
-  interactions = TRUE) +
-  labs(
-    title = "HighChol × Education",
-    x = "HighChol",
-    y = "Interaction SHAP Value")
-
-p7 <- sv_dependence(
-  shp_i,
-  v = "GenHlth",
-  color_var = "Education",
-  interactions = TRUE) +
-  labs(
-    title = "GenHlth × Education",
-    x = "General Health",
-    y = "Interaction SHAP Value"
-  )
-
-p8 <- sv_dependence(
-  shp_i,
-  v = "BMI",
-  color_var = "Education",
-  interactions = TRUE) +
-  labs(
-    title = "BMI × Education",
-    x = "BMI",
-    y = "Interaction SHAP Value")
-
-(p5 + p6) / (p7 + p8) +
-  plot_layout(guides = "collect") &
-  theme(legend.position = "bottom")
-```
-
-The education-based interaction plots show patterns very similar to
-those observed for income. For high blood pressure and high cholesterol,
-interaction SHAP values remain tightly clustered around zero regardless
-of educational level. This indicates that although these clinical
-conditions strongly influence predicted heart disease risk, their
-interaction with education contributes very little additional effect
-within the model.
-
-General health again displays slightly more variation in interaction
-SHAP values across categories. However, the spread remains relatively
-small and educational levels are distributed across each health category
-without clear separation. This suggests that worsening self-reported
-health increases predicted risk consistently across educational groups
-rather than being strongly moderated by education.
-
-For BMI, interaction SHAP values are effectively zero for nearly all
-observations. This indicates that BMI contributes almost no interaction
-effect with education in the model, and its influence on predictions is
-primarily through its direct effect rather than through socioeconomic
-modification.
-
-Overall, the interaction dependence plots provide little evidence that
-educational attainment strongly moderates the relationship between these
-clinical risk factors and predicted heart disease risk. Consistent with
-the income-based analysis, the dominant signal in the model arises from
-the direct effects of the clinical predictors rather than strong
-interaction effects with socioeconomic variables.
-
-7.5.7 Summary of SHAP Analysis
-
-The SHAP analysis provides a comprehensive interpretation of how the
-XGBoost model generates predictions at both global and local levels.
-Global feature importance and beeswarm visualisations show that the
-model’s predictions are primarily driven by clinical and health-related
-variables, particularly age, general health status, high blood pressure,
-and high cholesterol. These predictors consistently exert the largest
-influence on predicted heart disease risk across the dataset.
-
-Dependence plots further illustrate the direction and structure of these
-relationships, demonstrating clear increases in predicted risk for
-worsening health indicators and the presence of cardiometabolic
-conditions. Socioeconomic variables such as income and education
-contribute comparatively smaller direct effects, suggesting that
-clinical risk factors remain the dominant predictors of heart disease
-prevalence in the model.
-
-Interaction analyses were conducted to assess whether socioeconomic
-determinants moderate the influence of clinical predictors. Both
-pairwise interaction strength visualisations and interaction dependence
-plots indicate that most interactions between socioeconomic variables
-and clinical risk factors are relatively weak. While the XGBoost model
-is capable of capturing non-linear and interaction effects, the results
-suggest that the primary predictive signal arises from the independent
-contributions of the clinical variables rather than strong socioeconomic
-moderation effects.
-
-Finally, local SHAP explanations demonstrate how individual predictions
-are formed through the accumulation of multiple risk factors. High
-predicted risk emerges when several adverse health conditions occur
-simultaneously, whereas low predicted risk is associated with younger
-age, better general health, and the absence of key cardiometabolic
-conditions.
-
-With respect to the research question, the SHAP interaction analyses
-were used to investigate whether socioeconomic determinants,
-specifically income and education, moderate the impact of these clinical
-risk factors. Both the interaction strength visualisation and the
-interaction dependence plots show that most interactions between
-socioeconomic variables and clinical predictors are relatively small.
-The contribution of major risk factors such as high blood pressure, high
-cholesterol, and general health appears largely consistent across
-different socioeconomic groups.
-
-This suggests that although the XGBoost model is capable of capturing
-complex feature interactions, the predictive signal is dominated by the
-direct effects of clinical risk factors rather than strong moderation by
-income or education. Socioeconomic variables still contribute to
-predictions, but their role appears to be secondary compared with
-physiological and health-status indicators.
-
-Overall, the results indicate that complex machine learning models can
-detect interaction structures within the data, but in this case the
-moderation effect of socioeconomic determinants on the relationship
-between clinical risk factors and heart disease prevalence appears
-limited. Consequently, the predictive insights provided by the model
-primarily reinforce the importance of established clinical risk factors
-rather than revealing strong socioeconomic interaction effects.
+**Overall Interpretation.**\
+Taken together, the SHAP analyses suggest that cardiovascular risk
+predictions are driven primarily by demographic and clinical factors,
+with socioeconomic variables contributing only modestly through
+interaction effects. While some socioeconomic heterogeneity exists,
+particularly across income groups, the overall structure of the model
+remains largely additive, with clinical health indicators playing the
+dominant role in predicted heart disease risk.
 
 ## 7.6 Conclusions: Discussion and Limitations
 
@@ -4065,3 +3950,857 @@ interpretability through explainable AI techniques. However, in the
 context of this dataset, the dominant determinants of predicted heart
 disease risk remain clinical health indicators, with socioeconomic
 moderation effects appearing relatively modest.
+
+# 8. Socioeconomic and Lifestyle Determinants of Mental Health Burden
+
+#### Data Modification
+
+Numeric versions of ordinal predictors for count models (pscl does not
+handle ordered factors cleanly)
+
+```{r}
+diab_zinb <- diab |>
+  mutate(
+    Income    = as.integer(Income),
+    Education = as.integer(Education),
+    Age = as.integer(Age),
+    PhysActivity = as.integer(PhysActivity == "Yes"),
+    Smoker = as.integer(Smoker == "Yes"),
+    Sex = as.integer(Sex == "Male")
+  )
+```
+
+## 8.1 Modelling Objective
+
+This section addresses the following research question:
+
+> *To what extent do socioeconomic position (income, education),
+> lifestyle behaviours (physical activity, smoking), and physical health
+> burden predict the number of mentally unhealthy days reported in the
+> past 30 days, and do the protective associations of physical activity
+> differ across income and education strata?*
+
+The objective is threefold:
+
+1.  **Distributional justification** — to formally establish that the
+    count distribution of mentally unhealthy days violates Poisson
+    assumptions, motivating a zero-inflated negative binomial framework.
+
+2.  **Explanatory** — to estimate adjusted associations between the
+    predictor set and mental health burden, distinguishing between the
+    process governing who reports zero mentally unhealthy days and the
+    process governing how many days are reported among those with any
+    burden.
+
+3.  **Interaction analysis** — to test whether the protective
+    association of physical activity with mental health burden differs
+    across income strata and education strata, assessed as two separate
+    moderation tests against the main-effects baseline.
+
+MentHlth is treated as an integer count outcome bounded between 0 and
+30. Ordinal predictors (Income, Education, Age) are converted to integer
+scores preserving their monotonic structure, consistent with the ordinal
+scoring approach adopted in Sections 6 and 7.
+
+## 8.2 Outcome Variable and Model Justification
+
+The MentHlth variable records the number of days in the past 30 days
+that the respondent felt their mental health was not good. Its
+distributional properties, established in the EDA (Section 3.2.1), have
+direct implications for model selection.
+
+### 8.2.1 Distributional Diagnostics
+
+```{r}
+zero_prop <- mean(diab$MentHlth == 0)
+
+# Mean and variance — overdispersion check
+mh_mean <- mean(diab$MentHlth)
+mh_var  <- var(diab$MentHlth)
+overdispersion_ratio <- mh_var / mh_mean
+
+tibble(
+  Statistic = c("Proportion zero", "Mean", "Variance", "Variance / Mean ratio"),
+  Value = round(c(zero_prop, mh_mean, mh_var, overdispersion_ratio), 3)
+)
+```
+
+The proportion of respondents reporting zero mentally unhealthy days
+substantially exceeds what either a Poisson or standard negative
+binomial distribution would predict from the observed mean alone. The
+variance-to-mean ratio confirms severe overdispersion: under a Poisson
+process this ratio should equal one, whereas the observed ratio of
+approximately 17 indicates that the conditional variance far exceeds the
+conditional mean. This rules out standard Poisson regression as an
+appropriate modelling framework.
+
+A negative binomial model addresses overdispersion by introducing a
+dispersion parameter, but does not explicitly account for the excess
+concentration of zeros. A **Zero-Inflated Negative Binomial (ZINB)**
+model is therefore specified, which separates two distinct processes: a
+logistic component modelling the probability that an individual belongs
+to the structurally zero group (those who would never report mentally
+unhealthy days regardless of predictor values), and a negative binomial
+count component modelling the expected number of mentally unhealthy days
+among those who do experience some burden.
+
+## 8.3 Model Fitting and Justification
+
+### 8.3.1 Poisson Regression
+
+As a baseline, a Poisson regression model is fitted with MentHlth as the
+outcome and the full predictor set. Under a Poisson process, the
+conditional variance of the outcome is assumed to equal the conditional
+mean. As established in Section 8.2.1, the observed variance-to-mean
+ratio of approximately 17 already indicates this assumption is
+untenable. The Poisson model is nevertheless fitted explicitly so that
+its inadequacy can be formally demonstrated rather than assumed.
+
+```{r}
+mod_pois <- glm(
+  MentHlth ~ Income + Education + PhysActivity +
+    Smoker + PhysHlth + Age + Sex,
+  data   = diab_zinb,
+  family = poisson()
+)
+
+tidy(mod_pois, exponentiate = TRUE, conf.int = TRUE) |>
+  filter(term != "(Intercept)") |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  select(term, estimate, conf.low, conf.high, p.value)
+```
+
+The coefficient table confirms the overdispersion problem directly.
+Confidence intervals are implausibly narrow, for example, the interval
+for Income spans only 0.897 to 0.899, and all predictors return p-values
+of zero, indicating that standard errors are so severely deflated that
+no meaningful inference can be drawn. These results reflect the Poisson
+variance constraint rather than genuine precision in the data.
+
+### 8.3.2 Negative Binomial Regression
+
+The negative binomial model extends the Poisson by introducing a
+dispersion parameter θ, allowing the conditional variance to exceed the
+conditional mean. This directly addresses the overdispersion identified
+above.
+
+```{r}
+mod_nb <- glm.nb(
+  MentHlth ~ Income + Education + PhysActivity +
+    Smoker + PhysHlth + Age + Sex,
+  data = diab_zinb
+)
+
+tidy(mod_nb, exponentiate = TRUE, conf.int = TRUE) |>
+  filter(term != "(Intercept)") |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  select(term, estimate, conf.low, conf.high, p.value)
+```
+
+The negative binomial specification produces notably wider and more
+credible confidence intervals throughout.
+
+-   **Income gradient:** remains strong *(IRR = 0.890, 95% CI:
+    0.885–0.896)*, indicating that each step up the income scale is
+    associated with approximately an **11% reduction in the expected
+    number of mentally unhealthy days**, consistent with the
+    socioeconomic gradient identified in **Section 3.2**.
+
+-   **Physical activity:** shows a protective association *(IRR = 0.784,
+    95% CI: 0.764–0.805)*.
+
+-   **Physical health burden:** is positively associated with mental
+    health burden *(IRR = 1.061, 95% CI: 1.060–1.063)*.
+
+-   **Education:** notably loses statistical significance under the
+    negative binomial specification *(IRR = 0.989, 95% CI: 0.977–1.001,
+    p = 0.082)*, suggesting that its apparent association in the Poisson
+    model was an artefact of **overdispersion-inflated precision**
+    rather than a genuine independent effect.
+
+-   **Male sex:** is associated with lower expected burden *(IRR =
+    0.670)*, consistent with the **sex gap observed in Section 3.2.4**.
+
+However, the negative binomial model treats all zero observations as
+arising from the same count process as non-zero values, implicitly
+assuming that a respondent reporting zero mentally unhealthy days simply
+falls at the low end of the distribution rather than potentially
+representing a structurally distinct group.
+
+### 8.3.3 Zero-Inflated Negative Binomial
+
+The Zero-Inflated Negative Binomial model extends the negative binomial
+by explicitly modelling two distinct data-generating processes. The
+**count component** is a negative binomial regression estimating the
+expected number of mentally unhealthy days among individuals who
+experience some mental health burden. The **zero-inflation component**
+is a logistic regression estimating the log-odds that an individual
+belongs to the structural zero group, those who would report zero
+mentally unhealthy days regardless of their predictor values. This
+distinction is substantively meaningful: a respondent who reports zero
+mentally unhealthy days may either be genuinely psychologically well (a
+count-process zero) or may be someone who structurally never experiences
+or reports mental health burden (a structural zero). The ZINB model
+separates these two processes rather than collapsing them into a single
+distribution.
+
+The same predictor set is specified in both components. This reflects
+the assumption that the factors shaping whether someone belongs to the
+structural zero group are not categorically different from those shaping
+the frequency of mentally unhealthy days, socioeconomic position,
+physical health burden, and behavioural factors plausibly operate
+through both processes.
+
+```{r}
+#| include: false
+zinb_tidy <- function(model) {
+  s <- summary(model)
+  
+  bind_rows(
+    as_tibble(s$coefficients$count, rownames = "term") |>
+      mutate(Component = "Count"),
+    as_tibble(s$coefficients$zero, rownames = "term") |>
+      mutate(Component = "Zero-inflation")
+  ) |>
+    rename(
+      estimate  = Estimate,
+      std.error = `Std. Error`,
+      p.value   = `Pr(>|z|)`
+    ) |>
+    filter(term != "(Intercept)", term != "Log(theta)") |>
+    mutate(
+      conf.low  = exp(estimate - 1.96 * std.error),
+      conf.high = exp(estimate + 1.96 * std.error),
+      estimate  = exp(estimate),
+      across(where(is.numeric), \(x) round(x, 3))
+    ) |>
+    select(Component, term, estimate, conf.low, conf.high, p.value) |>
+    arrange(Component, term)
+}
+```
+
+```{r}
+mod_zinb_main <- zeroinfl(
+  MentHlth ~ Income + Education + PhysActivity +
+    Smoker + PhysHlth + Age + Sex |
+    Income + Education + PhysActivity +
+    Smoker + PhysHlth + Age + Sex,
+  data = diab_zinb,
+  dist = "negbin")
+
+zinb_results <- zinb_tidy(mod_zinb_main)
+
+zinb_results |> filter(Component == "Count") |> select(-Component)
+
+zinb_results |> filter(Component == "Zero-inflation") |> select(-Component)
+```
+
+### 8.3.4 Vuong Test: Negative Binomial vs ZINB
+
+The Vuong test compares the negative binomial and ZINB models on an
+observation-by-observation basis, evaluating whether the zero-inflation
+component provides a statistically significant improvement in fit. A
+significant result favouring model 2 (ZINB) indicates that the excess
+zeros in the outcome distribution cannot be fully accounted for by the
+negative binomial dispersion parameter alone.
+
+```{r}
+vuong_nb_zinb <- vuong(mod_nb, mod_zinb_main)
+
+```
+
+Across all three corrections — **raw**, **AIC-corrected**, and
+**BIC-corrected**, the **Vuong statistic** is large and negative *(z ≈
+−88)*, with *p \< 2.22e−16* in every case.
+
+-   The consistent designation of **model 2 \> model 1** confirms that
+    the **ZINB model** provides a dramatically better fit than the
+    **standard negative binomial model**.
+
+-   The **magnitude of the statistic**, together with its stability
+    across penalty corrections, leaves little ambiguity in the result.
+
+-   These findings indicate that a **substantial proportion of the zero
+    observations in MentHlth** represent a structurally distinct group,
+    which is not adequately captured by the count process alone.
+
+Consequently, the ZINB main effects model is adopted as the core
+inferential specification for all subsequent analysis.
+
+### 8.3.5 Interpretation of ZINB Main Effects
+
+The ZINB model produces two sets of estimates that must be interpreted
+separately. **Incidence rate ratios (IRRs)** from the count component
+describe multiplicative changes in the expected number of mentally
+unhealthy days among individuals who experience any mental health
+burden. **Odds ratios (ORs)** from the zero-inflation component describe
+the odds of belonging to the structural zero group, individuals who
+would report zero mentally unhealthy days regardless of their predictor
+values. A predictor may operate differently across the two components,
+and these divergences are substantively informative.
+
+```{r}
+#| fig-height: 7
+#| fig-width: 14
+
+p_count <- zinb_results |>
+  filter(Component == "Count") |>
+  mutate(term = fct_reorder(term, estimate)) |>
+  ggplot(aes(x = estimate, y = term)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high),
+                width = 0.25, orientation = "y") +
+  geom_vline(xintercept = 1, linetype = "dashed") +
+  labs(
+    title    = "Count component: Incidence Rate Ratios",
+    subtitle = "Expected mentally unhealthy days | any burden",
+    x        = "IRR (95% CI)",
+    y        = NULL
+  )
+
+p_zero <- zinb_results |>
+  filter(Component == "Zero-inflation") |>
+  mutate(term = fct_reorder(term, estimate)) |>
+  ggplot(aes(x = estimate, y = term)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high),
+                width = 0.25, orientation = "y") +
+  geom_vline(xintercept = 1, linetype = "dashed") +
+  labs(
+    title    = "Zero-inflation component: Odds Ratios",
+    subtitle = "Odds of structural zero (never reports burden)",
+    x        = "OR (95% CI)",
+    y        = NULL
+  )
+
+p_count | p_zero
+```
+
+### Socioeconomic Gradients
+
+**Income** shows a consistent protective association across both model
+components. In the **count component**, each step up the income scale
+reduces expected mentally unhealthy days by **6.3%** *(IRR = 0.937, 95%
+CI: 0.933–0.941)*. In the **zero-inflation component**, higher income
+also increases the odds of belonging to the **structural zero group**
+*(OR = 1.099, 95% CI: 1.093–1.105)*. Together, these results indicate
+that socioeconomic advantage both **reduces the frequency of mental
+health burden and increases the likelihood of being structurally
+insulated from it**.
+
+**Education** shows a similar but weaker pattern. Higher education
+reduces expected mentally unhealthy days *(IRR = 0.942, 95% CI:
+0.933–0.951)* but is associated with **lower odds of structural zero
+status** *(OR = 0.905, 95% CI: 0.894–0.915)*, suggesting that more
+educated individuals may be **more likely to recognise and report burden
+when it occurs**, despite experiencing fewer unhealthy days overall.
+
+### Behavioural Factors
+
+**Physical activity** shows the strongest protective behavioural
+association, reducing expected mentally unhealthy days by **17.6%**
+*(IRR = 0.824, 95% CI: 0.809–0.840)*. Its effect on structural zero
+status is **small** *(OR = 1.045, 95% CI: 1.020–1.070)*, indicating that
+activity primarily reduces the **frequency of burden rather than
+eliminating it entirely**.
+
+**Smoking** shows the opposite pattern, increasing expected mentally
+unhealthy days by **19.9%** *(IRR = 1.199, 95% CI: 1.179–1.219)* and
+reducing the odds of structural zero status *(OR = 0.811, 95% CI:
+0.794–0.828)*, indicating greater mental health burden through both
+processes.
+
+### Physical Health Burden
+
+Physical health burden strongly predicts mental health burden. Each
+additional physically unhealthy day increases mentally unhealthy days by
+**2.8%** *(IRR = 1.028, 95% CI: 1.028–1.029)* and reduces the
+probability of structural zero status *(OR = 0.948, 95% CI:
+0.947–0.949)*, reinforcing the close co-occurrence of physical and
+mental health burden.
+
+### Sex Differences
+
+Sex shows a divergence between components. In the **count model**, male
+sex is **small and non-significant** *(IRR = 0.987, 95% CI:
+0.970–1.004)*. However, men have **much higher odds of structural zero
+status** *(OR = 1.830, 95% CI: 1.792–1.869)*, suggesting the observed
+sex gap in mentally unhealthy days may partly reflect **differences in
+reporting behaviour rather than underlying burden**.
+
+## 8.4 Moderation Analysis: Physical Activity Interactions
+
+### 8.4.1 Rationale
+
+The main effects model established that physical activity is associated
+with a substantial reduction in mentally unhealthy days among those with
+any burden (IRR = 0.824). However, the EDA demonstrated that both
+physical activity participation and mental health burden are
+independently structured by socioeconomic position, lower income and
+education groups report both higher mental health burden and lower
+physical activity rates. This raises the question of whether the
+protective association of physical activity is uniform across
+socioeconomic strata, or whether it is stronger or weaker at particular
+levels of income or educational attainment.
+
+Two moderation hypotheses are tested separately. Model 4 adds a
+PhysActivity × Income interaction term to both components of the ZINB,
+and Model 5 adds a PhysActivity × Education interaction. Separate models
+are preferred over a single combined interaction model given the
+moderate correlation between income and education (Spearman $ρ ≈ 0.45$),
+which would partially confound the two interaction terms if estimated
+simultaneously. Each model is compared against the main effects baseline
+via likelihood ratio test.
+
+### 8.4.2 Model Fitting
+
+```{r}
+mod_zinb_inc <- zeroinfl(
+  MentHlth ~ Income + Education + PhysActivity +
+    Smoker + PhysHlth + Age + Sex +
+    PhysActivity:Income |
+    Income + Education + PhysActivity +
+    Smoker + PhysHlth + Age + Sex +
+    PhysActivity:Income,
+  data = diab_zinb,
+  dist = "negbin"
+)
+
+mod_zinb_edu <- zeroinfl(
+  MentHlth ~ Income + Education + PhysActivity +
+    Smoker + PhysHlth + Age + Sex +
+    PhysActivity:Education |
+    Income + Education + PhysActivity +
+    Smoker + PhysHlth + Age + Sex +
+    PhysActivity:Education,
+  data = diab_zinb,
+  dist = "negbin"
+)
+```
+
+### 8.4.3 Likelihood Ratio Tests
+
+```{r}
+# LRT: ZINB main vs ZINB + income interaction
+lrt_inc <- lrtest(mod_zinb_main, mod_zinb_inc)
+
+# LRT: ZINB main vs ZINB + education interaction
+lrt_edu <- lrtest(mod_zinb_main, mod_zinb_edu)
+
+bind_rows(
+  tibble(
+    Interaction = "PhysActivity × Income",
+    df    = lrt_inc$Df[2],
+    Chisq = round(lrt_inc$Chisq[2], 2),
+    p.value = "< 2.2e-16"
+  ),
+  tibble(
+    Interaction = "PhysActivity × Education",
+    df    = lrt_edu$Df[2],
+    Chisq = round(lrt_edu$Chisq[2], 2),
+    p.value = "< 2.2e-16"
+  )
+)
+```
+
+Both interaction models provide statistically significant improvements
+in fit relative to the **main effects baseline**. The **PhysActivity ×
+Income** interaction produces a likelihood ratio statistic of
+$\Delta\chi^2 = 110.37$ $(df = 2,\ p < 2.2\times10^{-16})$, and the
+**PhysActivity × Education** interaction yields $\Delta\chi^2 = 87.33$
+$(df = 2,\ p < 2.2\times10^{-16})$.
+
+The **two degrees of freedom** in each case arise because the
+interaction term appears in **both the count and zero-inflation
+components** of the ZINB model.
+
+The significance of both tests confirms that the **protective
+association of physical activity with mental health burden is not
+uniform across socioeconomic strata**. Instead, its magnitude differs
+meaningfully across both **income and education levels**.
+
+### 8.4.4 Interaction Plots and Interpretation
+
+```{r}
+pred_inc <- ggpredict(
+  mod_zinb_inc,
+  terms = c("Income [1:8]", "PhysActivity [0,1]")
+)
+
+# PhysActivity × Education predicted marginal means
+pred_edu <- ggpredict(
+  mod_zinb_edu,
+  terms = c("Education [1:6]", "PhysActivity [0,1]")
+)
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 18
+
+p_int_inc <- pred_inc |>
+  as_tibble() |>
+  mutate(Activity = if_else(group == "1", "Active", "Inactive")) |>
+  ggplot(aes(x = x, y = predicted,
+             colour = Activity, fill = Activity)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high),
+              alpha = 0.15, colour = NA) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  scale_x_continuous(
+    breaks = 1:8,
+    labels = c("< $10k", "$10k–$14k", "$15k–$19k", "$20k–$24k",
+               "$25k–$34k", "$35k–$49k", "$50k–$74k", "$75k+")
+  ) +
+  scale_colour_manual(values = c("Active" = "#1a9641", "Inactive" = "#d7191c")) +
+  scale_fill_manual(values   = c("Active" = "#1a9641", "Inactive" = "#d7191c")) +
+  labs(
+    title   = "Predicted mentally unhealthy days by income and physical activity",
+    x       = "Household income",
+    y       = "Predicted mentally unhealthy days (past 30)",
+    colour  = "Physical activity",
+    fill    = "Physical activity"
+  ) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+p_int_edu <- pred_edu |>
+  as_tibble() |>
+  mutate(Activity = if_else(group == "1", "Active", "Inactive")) |>
+  ggplot(aes(x = x, y = predicted,
+             colour = Activity, fill = Activity)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high),
+              alpha = 0.15, colour = NA) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  scale_x_continuous(
+    breaks = 1:6,
+    labels = c("Kindergarten\nor less", "Grades 1–8",
+               "Grades 9–11", "High school\ngraduate",
+               "Some college /\ntechnical", "College\ngraduate")
+  ) +
+  scale_colour_manual(values = c("Active" = "#1a9641", "Inactive" = "#d7191c")) +
+  scale_fill_manual(values   = c("Active" = "#1a9641", "Inactive" = "#d7191c")) +
+  labs(
+    title   = "Predicted mentally unhealthy days by education and physical activity",
+    x       = "Education level",
+    y       = "Predicted mentally unhealthy days (past 30)",
+    colour  = "Physical activity",
+    fill    = "Physical activity"
+  ) 
+
+(p_int_inc | p_int_edu) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+**Physical activity and income.** Predicted mentally unhealthy days
+decline across the income distribution for both groups, but far more
+steeply among those who are physically active. Among inactive
+individuals, predicted burden falls modestly from **9.33** at the lowest
+income level to **7.29** at the highest. Among active individuals, the
+decline is much larger, from **9.21** to **5.34**. At the lowest income
+level the two groups are nearly identical, indicating little protective
+association of activity. The divergence emerges progressively with
+income, suggesting that the mental health benefits of physical activity
+are **strongest among higher-income individuals**, consistent with a
+resource constraint interpretation.
+
+**Physical activity and education.** The education gradient differs
+markedly. Among inactive respondents, predicted mentally unhealthy days
+remain essentially **flat** across education levels (7.34 to 7.22),
+indicating little protective effect of education alone. Among active
+respondents, however, a clear decline is observed, from **8.37** at the
+lowest education level to **5.39** among college graduates. At the
+lowest education levels, active individuals initially show **higher
+predicted burden than inactive individuals**, before the trajectories
+reverse at higher education levels. This pattern suggests that physical
+activity may not confer the same psychological benefits at low education
+levels, potentially reflecting **occupational or manual labour rather
+than voluntary leisure activity**, with the protective association
+emerging more clearly among individuals with greater educational
+resources.
+
+## 8.5 Model Comparison
+
+```{r}
+model_comparison <- tibble(
+  Model       = c("Poisson", "Negative Binomial",
+                  "ZINB (main effects)",
+                  "ZINB + PhysActivity × Income",
+                  "ZINB + PhysActivity × Education"),
+  AIC         = c(AIC(mod_pois), AIC(mod_nb),
+                  AIC(mod_zinb_main), AIC(mod_zinb_inc), AIC(mod_zinb_edu)),
+  BIC         = c(BIC(mod_pois), BIC(mod_nb),
+                  BIC(mod_zinb_main), BIC(mod_zinb_inc), BIC(mod_zinb_edu)),
+  LogLik      = c(logLik(mod_pois), logLik(mod_nb),
+                  logLik(mod_zinb_main), logLik(mod_zinb_inc), logLik(mod_zinb_edu))
+) |>
+  mutate(across(where(is.numeric), \(x) round(x, 1)))
+
+model_comparison |>
+  select(Model, AIC, BIC, LogLik)
+```
+
+The **model comparison table** confirms that each successive
+specification represents a genuine improvement in fit. The transition
+from **Poisson to negative binomial** produces the largest reduction in
+information criteria, reflecting the substantial overdispersion present
+in the outcome distribution.
+
+Moving to the **ZINB main effects model** yields a further improvement
+in fit, formally confirmed by the **Vuong test**
+$(z \approx -88,\ p < 2.2\times10^{-16})$. This indicates that a
+meaningful proportion of zero observations arise from a **structurally
+distinct process**, rather than representing the lower tail of the count
+distribution.
+
+Both **interaction models** further improve on the main effects
+baseline. The **PhysActivity × Income** interaction produces the larger
+improvement $(\Delta\chi^2 = 110.37)$ compared with the **PhysActivity ×
+Education** interaction $(\Delta\chi^2 = 87.33)$, although both
+likelihood ratio tests are **highly significant**, confirming that the
+protective effect of physical activity varies across socioeconomic
+strata.
+
+## 8.6 Discussion and Limitations
+
+This section addressed the third research question by examining the
+socioeconomic, behavioural, and physical health determinants of mental
+health burden using a zero-inflated negative binomial (ZINB) framework.
+The model separates two processes: the probability of structural zero
+status and the expected number of mentally unhealthy days among those
+with any burden, avoiding the loss of heterogeneity that would occur if
+both were collapsed into a single distribution.
+
+The main effects model identified a strong income gradient across both
+components. Higher income was associated with fewer mentally unhealthy
+days in the count component and greater odds of structural zero status
+in the zero-inflation component, indicating that socioeconomic advantage
+operates through two mechanisms consistent with Dahlgren and Whitehead's
+(1991) social determinants framework. Physical activity emerged as the
+strongest behavioural predictor in the count component, aligning with
+evidence linking leisure-time activity with improved psychological
+wellbeing *(Liu et al., 2023)*.
+
+The moderation analyses showed that the protective association of
+physical activity varies across socioeconomic strata. The PhysActivity ×
+Income interaction indicates that the protective effect is minimal at
+the lowest income levels and increases with affluence, consistent with a
+resource constraint interpretation, where the benefits of physical
+activity depend on supportive material conditions. The PhysActivity ×
+Education interaction shows a crossover at the lowest education levels,
+where active individuals report higher predicted burden than inactive
+ones. This pattern suggests that physical activity at low educational
+attainment may reflect occupational exertion rather than voluntary
+leisure activity, which has a different psychological profile *(Liu et
+al., 2023)*.
+
+The sex effect diverges across model components. Male sex is
+non-significant in the count component but strongly associated with
+structural zero status \$(\\mathrm{OR}=1.830)\$ in the zero-inflation
+component. This pattern suggests that the observed sex gap in reported
+mental health burden may partly reflect differences in reporting
+behaviour, rather than solely differences in underlying distress.
+
+Several limitations apply:
+
+-   **Self-reported data** may introduce measurement error and social
+    desirability bias.
+
+-   The **cross-sectional design** prevents causal inference and leaves
+    open the possibility of reverse causality.
+
+-   The **binary physical activity measure** does not distinguish
+    leisure from occupational activity, limiting interpretation of the
+    education interaction.
+
+-   **Ordinal predictors** are treated as integer scores, implicitly
+    assuming equal interval spacing between categories.
+
+## 8.7 Conclusion
+
+The results indicate that **mental health burden is jointly shaped by
+socioeconomic position, physical health, and behavioural factors**, with
+the **income gradient emerging as the dominant determinant** operating
+across both model components. Physical activity appears to be a
+meaningful protective factor, but its benefits are conditional on
+socioeconomic context, most consistently observed among higher-income
+and more educated individuals, and potentially reversed when activity
+reflects occupational necessity rather than voluntary health behaviour.
+
+Overall, the findings highlight the limitations of purely behavioural
+explanations for mental health inequalities and emphasise the importance
+of material and structural conditions in shaping both the experience and
+reporting of mental health burden.
+
+# 9. Discussion and Conclusion
+
+## 9.1 Overview
+
+This report investigated health determinants and outcomes across three
+research questions using a large nationally representative health survey
+dataset. Each research question was motivated by the exploratory data
+analysis in Section 3 and addressed using a methodologically distinct
+analytical framework: multinomial logistic regression and ensemble
+machine learning for diabetes prediction (RQ1); regularised logistic
+regression and XGBoost with SHAP-based explainability for cardiovascular
+risk moderation (RQ2); and zero-inflated negative binomial regression
+for mental health burden (RQ3). Taken together, the three analyses
+converge on a consistent set of substantive findings that are most
+clearly visible when examined across, rather than within, individual
+sections.
+
+## 9.2 Cross-Cutting Findings
+
+### 9.2.1 The primacy of cardiometabolic pathways
+
+Across all three research questions, biological and physiological
+indicators consistently emerged as the dominant predictors of health
+outcomes, outperforming behavioural and socioeconomic variables in
+direct predictive terms. In RQ1, high blood pressure and high
+cholesterol were the strongest predictors of diabetes status by both
+SHAP magnitude and odds ratio, with **HighBP** alone associated with a
+139% increase in the odds of diabetes relative to no diabetes. In RQ2,
+the same cardiometabolic indicators, alongside age and general health
+status, drove cardiovascular risk prediction, with socioeconomic
+variables contributing only modest independent effects. In RQ3, physical
+health burden emerged as the strongest covariate in the count component
+of the ZINB model, reflecting the tight coupling between physical and
+mental health burden identified in the EDA.
+
+This pattern is consistent with a pathophysiological perspective in
+which metabolic dysregulation and chronic physical illness represent
+upstream determinants that mediate much of the apparent influence of
+behavioural and socioeconomic factors on health outcomes. It also
+carries a methodological implication: models that omit cardiometabolic
+indicators risk substantial confounding, with behavioural and
+socioeconomic variables absorbing variance that properly belongs to
+physiological pathways.
+
+### 9.2.2 Socioeconomic gradients are outcome-specific
+
+While socioeconomic position structured all three outcomes, its
+magnitude and mechanism varied considerably across research questions.
+In RQ1, income and education were present as predictors but ranked well
+below cardiometabolic variables in both SHAP importance and odds ratio
+magnitude. In RQ2, socioeconomic moderation of cardiovascular risk was
+statistically significant; income and education interactions both
+reached *p* \< 0.01. However, the practical magnitude of these
+interactions was small, with SHAP interaction values remaining
+negligible relative to the direct effects of clinical predictors.
+
+In RQ3, by contrast, income emerged as the dominant predictor of mental
+health burden, operating simultaneously through the count and
+zero-inflation components and moderating the protective association of
+physical activity across the full income distribution. This variation
+suggests that socioeconomic gradients in health are not uniform across
+outcomes and that their apparent importance is sensitive to the outcome
+under consideration. Conditions with strong biological determinants,
+such as diabetes and cardiovascular disease, may be less amenable to
+socioeconomic explanation than outcomes with greater psychosocial
+mediation, such as self-reported mental health burden.
+
+### 9.2.3 Behavioural explanations require structural context
+
+A consistent finding across all three research questions was that
+behavioural variables, including physical activity, smoking, and diet,
+operate within structural constraints and cannot be interpreted
+independently of socioeconomic context. In RQ1, physical activity showed
+essentially no independent association with diabetes status once
+cardiometabolic variables were included in the model, suggesting that
+its apparent protective effect in unadjusted analyses is largely
+mediated through metabolic pathways.
+
+In RQ2, smoking contributed to cardiovascular risk prediction but ranked
+consistently below clinical and demographic indicators. In RQ3, physical
+activity was the strongest behavioural predictor in the count component;
+however, the moderation analyses revealed that its protective
+association was negligible at the lowest income levels and subject to
+reversal at the lowest education levels, where it may reflect
+occupational exertion rather than voluntary leisure activity.
+
+Taken together, these findings are consistent with **Dahlgren and
+Whitehead's (1991)** social determinants framework, in which individual
+behaviours are embedded within, and shaped by, broader material and
+structural conditions. Interventions targeting behavioural change in
+isolation, without addressing the socioeconomic contexts that constrain
+and enable those behaviours, are unlikely to achieve uniform benefit
+across the population.
+
+## 9.3 Methodological Reflections
+
+The three research questions employed genuinely distinct method
+families, each contributing insights that would not have been
+recoverable from the others. The multinomial logistic regression in RQ1
+was the only model capable of retaining predictive capacity for the
+prediabetes class, which tree-based models collapsed entirely due to
+class overlap and the absence of ordinal structure in standard splitting
+criteria. This finding illustrates that predictive performance metrics
+aggregated across classes can obscure clinically important failures in
+minority class prediction.
+
+The XGBoost framework in RQ2 demonstrated that flexible machine learning
+models can substantially outperform logistic regression for imbalanced
+binary outcomes. However, SHAP-based interaction analysis revealed
+predominantly additive structure even in a dataset where interactions
+were theoretically expected. This finding cautions against assuming that
+model flexibility necessarily implies empirical interaction richness.
+
+The ZINB framework in RQ3 demonstrated the value of distributional
+modelling for outcomes with excess zeros. A single-component model would
+conflate two substantively distinct processes and produce misleading
+coefficient estimates for predictors that operate differently across
+those processes.
+
+## 9.4 Broader Limitations
+
+Several limitations apply across all three research questions and should
+be considered when interpreting the findings collectively.
+
+The dataset is **cross-sectional**, meaning that causal relationships
+cannot be established from the observed associations. Reverse causality
+is a plausible alternative explanation for several findings; poor health
+may reduce income and physical activity participation just as readily as
+low income and inactivity may worsen health outcomes.
+
+The dataset relies entirely on **self-reported measures**, introducing
+the possibility of measurement error, social desirability bias, and
+differential reporting across demographic groups. This concern is
+particularly relevant for mental health outcomes, where the sex
+divergence in the ZINB zero-inflation component suggests that reporting
+behaviour itself may vary systematically.
+
+The socioeconomic indicators available, namely income band and education
+level, are relatively **coarse proxies** for the multidimensional
+construct of socioeconomic position. Their categorical nature limits the
+precision with which gradients can be estimated.
+
+Finally, the dataset does not include **clinical biomarkers,
+longitudinal measures of socioeconomic trajectory, or healthcare
+utilisation patterns**, all of which would be necessary to adjudicate
+between competing causal explanations for the observed associations.
+
+## 9.5 Conclusion
+
+This report demonstrated that health outcomes in this population are
+jointly shaped by cardiometabolic status, socioeconomic position, and
+behavioural factors. However, the relative importance of these domains
+varies substantially across outcomes and cannot be reduced to a single
+explanatory framework.
+
+Physiological indicators dominate prediction of diabetes and
+cardiovascular disease, while socioeconomic gradients are most
+consequential for mental health burden. Behavioural variables, on their
+own, are consistently insufficient explanations and must be interpreted
+within the structural contexts that enable or constrain them.
+
+Methodologically, the three analyses illustrate that no single modelling
+framework is universally appropriate. The choice between interpretable
+parametric models, flexible machine learning approaches, and
+distributional count models should be guided by the inferential
+objectives, outcome properties, and class structure of the problem.
+
+Together, these findings contribute to a broader evidence base linking
+social determinants, cardiometabolic risk, and psychological wellbeing,
+and underscore the value of multi-method analytical approaches for
+characterising health inequalities in large-scale survey data.
