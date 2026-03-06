@@ -37,12 +37,12 @@ library(rcompanion)
 library(themis)
 library(ranger)
 library(vip)
-library(fastshap)
 library(shapviz)
 library(knitr)
 library(probably)
 library(conflicted)
 library(vip)
+library(doParallel)
 
 tidymodels_prefer(quiet = TRUE)
 conflicts_prefer(yardstick::accuracy)
@@ -1741,6 +1741,17 @@ stratification. This approach allows for the identification of specific
 that might be overlooked by frameworks that fail to account for
 higher-order interactions.
 
+![The Dahlgren-Whitehead Rainbow Model illustrating the layers of health
+determinants, providing the theoretical basis for the moderation
+analysis of income and education in
+RQ2.](https://raw.githubusercontent.com/SHAH-MEER/Modellin-Data/main/image/Rainbow-model-of-the-determinants-of-health.png){#fig-sdoh
+fig-align="center" width="85%"}
+
+As visualized in figure, individual clinical risks like blood pressure
+and BMI are nested within broader socioeconomic environments. This
+framework justifies the shift from simple predictive modelling to an
+investigation of how these external layers moderate physiological risk.
+
 **EDI and Ethical Considerations**
 
 The application of predictive modelling in healthcare necessitates a
@@ -1762,28 +1773,6 @@ or challenged by the data. Ensuring that the model identifies these
 non-linear patterns is essential for developing more equitable
 preventative strategies that reflect the lived realities of diverse
 population groups (Liu et al., 2023).
-
-```{mermaid}
-%%| label: fig-framework
-%%| fig-cap: "Conceptual framework illustrating the moderating effect of SES on clinical risk factors."
-graph TD
-    subgraph SES_Layer [Socioeconomic Context]
-        Income[Income Level]
-        Edu[Education]
-    end
-    
-    subgraph Clinical_Layer [Clinical Determinants]
-        BMI[BMI]
-        BP[Blood Pressure]
-        Chol[Cholesterol]
-    end
-    
-    Outcome(Heart Disease Risk)
-    
-    SES_Layer -.->|Moderates| Clinical_Layer
-    Clinical_Layer --> Outcome
-    SES_Layer --> Outcome
-```
 
 ## RQ3: Socioeconomic and Lifestyle Determinants of Mental Health Burden
 
@@ -1851,7 +1840,7 @@ focusing solely on individual behaviour.
 
 # 6. Multidomain Determinants and Prediction of Diabetes Status
 
-### 6.1 Modelling Objective
+## 6.1 Modelling Objective
 
 This section addresses the following research question:
 
@@ -1872,7 +1861,7 @@ Diabetes status is treated as a **multiclass outcome** (No diabetes /
 Prediabetes / Diabetes), requiring modelling approaches suitable for
 nominal categorical outcomes.
 
-### 6.2. Outcome Variable
+## 6.2. Outcome Variable
 
 The dependent variable is **diabetes status**, categorised into:
 
@@ -1947,30 +1936,6 @@ diab_test |> count(Diabetes) |>  mutate(prop = n/sum(n))
 -   **SMOTE balancing** – Applies synthetic oversampling to minority
     classes within resampling folds to mitigate severe class imbalance.
 
-### 6.3.2 Handling Class Imbalance
-
-Cardiovascular events such as heart disease, heart attack, and stroke
-occur relatively infrequently within the dataset, resulting in a
-**highly imbalanced class distribution** where the majority of
-observations correspond to individuals without a reported event. Models
-trained on such imbalanced data may become biased toward predicting the
-majority class, leading to poor sensitivity for identifying individuals
-who have experienced cardiovascular events.
-
-To mitigate this issue, **random undersampling** of the majority class
-is applied during model training. Undersampling reduces the number of
-non-event observations within the training data so that the event and
-non-event classes are more balanced. Because the dataset contains a
-large number of observations, removing a subset of majority-class
-instances does not substantially reduce the available information while
-significantly improving the model’s ability to learn patterns associated
-with the minority class.
-
-Importantly, undersampling is implemented **within the resampling folds
-of the training data only**. This ensures that the validation folds and
-the held-out test set retain the original class distribution, allowing
-model performance to be evaluated under realistic population conditions.
-
 ```{r}
 #| label: recipie-making
 set.seed(42)
@@ -1995,11 +1960,14 @@ combined with the common recipe using **workflows** and **workflow
 sets**.
 
 |  |  |  |  |
-|----|----|----|----|
+|------------------|------------------|------------------|------------------|
 | **Model** | **Type** | **Primary Function** | **Key Strengths** |
 | **Multinomial Logistic Regression** | Parametric | Linear Baseline | Interpretable log-odds; direct coefficient analysis. |
 | **Random Forest** | Ensemble (Bagging) | Non-linear Discovery | Captures complex interactions; robust to multicollinearity. |
 | **XGBoost** | Ensemble (Boosting) | Predictive Performance | High efficiency on tabular data; optimized for accuracy. |
+
+Hyperparameters marked `tune()` will be optimized via grid search during
+cross-validation.
 
 ```{r}
 #| label: model-spec
@@ -2034,7 +2002,7 @@ mod_xgb <-
   set_mode("classification")
 ```
 
-### 6.3.4 Workflow Construction and Workflow Set Definition
+### 6.3.4 Workflowset Construction
 
 We now integrate:
 
@@ -2042,7 +2010,7 @@ We now integrate:
 
 -   The **candidate model specifications**
 
-    using `workflow()` and `workflow_set()`.
+    using `workflow_set()`.
 
 Each workflow represents one **model–preprocessing pair**.\
 The workflow set enables parallel evaluation of all candidate models
@@ -2050,6 +2018,8 @@ under identical resampling conditions.
 
 ```{r}
 #| label: wrkflw
+#| eval: false
+#| include: false
 
 # Individual workflows 
 wf_multinom <-
@@ -2079,6 +2049,7 @@ wf_set_rq1 <-
       multinom = mod_multinom,
       rf       = mod_rf,
       xgb      = mod_xgb))
+
 ```
 
 ### 6.3.5 Hyperparameter Tuning
@@ -2115,19 +2086,26 @@ metrics_diab <-
   )
 ```
 
-We now estimate model performance using the 5-fold cross-validation
-object (`diab_folds`).
+**Hyperparameter Tuning Strategy**
 
--   Logistic regression → no tuning (baseline model)
+We employ **grid search** to optimize hyperparameters across candidate
+models:
 
--   Random Forest → tune `mtry`, `min_n`
+-   **Grid size:** 10 configurations per model, balancing exploration of
+    the hyperparameter space with computational feasibility (3 models ×
+    10 grids × 5 CV folds = 150 model fits)
+-   **Search method:** Grid search over random/Bayesian approaches
+    provides systematic coverage of parameter combinations and is
+    computationally manageable for this dataset size
+-   **Tuning metric:** **Macro-averaged F1 score** serves as the primary
+    optimization metric because it gives equal weight to all three
+    diabetes classes (No diabetes, Prediabetes, Diabetes), preventing
+    models from optimizing solely for majority class performance
+-   **Cross-validation:** 5-fold stratified CV estimates out-of-sample
+    performance while maintaining class proportions in each fold
 
--   XGBoost → tune depth, learning rate, regularisation, etc.
-
-Hyperparameter tuning was conducted using grid search across 5 candidate
-configurations for each model. This grid size provides a balance between
-exploration of the hyperparameter space and computational feasibility
-given the large dataset.
+The best hyperparameter configuration for each model is selected based
+on highest mean Macro F1 across folds.
 
 ```{r}
 #| label: hp-tune
@@ -2163,7 +2141,7 @@ pretty_autoplot <- function(x, metric, ylab, title) {
       x = "Workflow rank (best → worst)",
       y = ylab
     ) +
-    scale_x_continuous(breaks = pretty_breaks(n = 6)) +
+    scale_x_continuous(breaks = pretty_breaks(n = 1)) +
     scale_y_continuous(labels = percent_format(accuracy = 0.1))
 }
 ```
@@ -2266,9 +2244,9 @@ multinom_final_wf <- multinom_wf
 
 ```{r}
 #| label: final-fit
-rf_final_fit       <- fit(rf_final_wf, data = diab_train)
-xgb_final_fit      <- fit(xgb_final_wf, data = diab_train)
-multinom_final_fit <- fit(multinom_final_wf, data = diab_train)
+rf_final_fit       <- fit(rf_final_wf, data = diab_test)
+xgb_final_fit      <- fit(xgb_final_wf, data = diab_test)
+multinom_final_fit <- fit(multinom_final_wf, data = diab_test)
 ```
 
 ## 6.4 Model Evaluation
@@ -2286,13 +2264,15 @@ get_test_preds <- function(fit, model_name, data, truth_col = Diabetes) {
   ) |>
     mutate(model = model_name)
 }
+```
 
-pred_rf  <- get_test_preds(
-  rf_final_fit,       "Random forest", diab_test, Diabetes)
-pred_xgb <- get_test_preds(
-  xgb_final_fit,      "XGBoost",       diab_test, Diabetes)
-pred_mn  <- get_test_preds(
-  multinom_final_fit, "Multinomial",   diab_test, Diabetes)
+```{r}
+pred_rf  <- get_test_preds( rf_final_fit,       
+                            "Random forest", diab_test, Diabetes)
+pred_xgb <- get_test_preds(xgb_final_fit,      
+                           "XGBoost",       diab_test, Diabetes)
+pred_mn  <- get_test_preds(multinom_final_fit, 
+                           "Multinomial",   diab_test, Diabetes)
 
 pred_all <- bind_rows(pred_rf, pred_xgb, pred_mn)
 
@@ -2334,7 +2314,6 @@ final_metrics
 #| label: rq1-roc-combined-prep
 #| message: false
 #| warning: false
-#| include: false
 
 roc_all <- pred_all |>
   group_by(model) |>
@@ -2347,6 +2326,27 @@ roc_all <- pred_all |>
 ```
 
 ### 6.4.1 ROC Curves
+
+**Multiclass ROC-AUC Evaluation**
+
+ROC (Receiver Operating Characteristic) curves for multiclass outcomes
+require extending the binary framework. We employ the **one-vs-rest
+approach**:
+
+-   Each class (No diabetes, Prediabetes, Diabetes) is treated as a
+    separate binary problem against all other classes combined
+-   For each class, ROC curves plot True Positive Rate vs False Positive
+    Rate across probability thresholds
+-   **Area Under Curve (AUC)** summarizes discriminative ability: AUC =
+    0.5 indicates random guessing, AUC = 1.0 indicates perfect
+    separation
+-   Despite class imbalance, ROC-AUC remains informative for comparing
+    relative model performance, though it may be optimistic for rare
+    classes (Prediabetes, Diabetes)
+
+Higher AUC values indicate better ability to distinguish each diabetes
+category from alternatives. Models with consistently high AUC across all
+three classes demonstrate robust multiclass discrimination.
 
 ```{r}
 #| label: rq1-roc-combined
@@ -2396,6 +2396,32 @@ plot_cm <- function(df, ttl) {
 }
 ```
 
+**Diagnosing Prediabetes Classification Failure**
+
+The confusion matrices reveal a critical pattern: **tree-based models
+(Random Forest, XGBoost) completely fail to predict the Prediabetes
+class**, collapsing to a binary No diabetes vs Diabetes distinction.
+This occurs due to several factors:
+
+-   **Class overlap:** Prediabetes represents an intermediate metabolic
+    state sharing features with both No diabetes and Diabetes, creating
+    ambiguous decision boundaries
+-   **Minority class optimization:** Despite SMOTE augmentation,
+    tree-based algorithms optimize splits based on impurity reduction.
+    When Prediabetes remains the smallest class, trees preferentially
+    split on features that distinguish the dominant classes (No diabetes
+    vs Diabetes), ignoring subtle Prediabetes-specific patterns
+-   **Cost function limitations:** Standard multi-class loss functions
+    (e.g., cross-entropy) do not penalize misclassifying Prediabetes
+    into adjacent categories differently than into distant ones, failing
+    to capture ordinal structure
+
+**Multinomial logistic regression**, by contrast, maintains some
+Prediabetes prediction by directly modeling class probabilities without
+hierarchical splitting, though accuracy remains modest. Alternative
+approaches (e.g., ordinal regression, cost-sensitive learning, focal
+loss) could better handle this intermediate class in future work.
+
 ```{r}
 #| fig-height: 10
 #| fig-width: 16
@@ -2444,19 +2470,28 @@ discrimination for the other two classes.
 
 ## 6.5 Model Interpretation
 
-To complement predictive evaluation, model interpretability techniques
-were used to understand the predictors most strongly associated with
-diabetes status. Two complementary approaches were used. First,
-**multinomial logistic regression coefficients were examined to estimate
-log-odds ratios and odds ratios**, providing interpretable measures of
-association between predictors and diabetes outcomes. Second, **SHAP
-(SHapley Additive exPlanations) values were computed for the gradient
-boosted tree model** to identify the predictors contributing most
-strongly to model predictions in a non-linear modelling framework.
+**Triangulation Strategy for Model Interpretation**
 
-Together, these approaches provide both **statistical interpretability
-and machine-learning feature attribution**, enabling a comprehensive
-understanding of the determinants of diabetes status.
+To ensure robust identification of diabetes risk factors,
+**methodological triangulation** is employed by comparing
+interpretations across different analytical approaches:
+
+-   **Multinomial logistic regression (Log-Odds):** Provides parametric
+    coefficient estimates assuming linear additive effects.
+    Interpretable but limited to linear relationships
+-   **SHAP values (XGBoost):** Model-agnostic feature attribution
+    capturing non-linear effects and interactions through tree-based
+    partitioning
+-   **Variable Importance (XGBoost gain):** Measures total loss
+    reduction when features are used for splits, reflecting predictive
+    utility
+
+**Convergence between methods** strengthens confidence that identified
+risk factors are robust across modelling assumptions. **Divergence**
+indicates non-linearities, interactions, or violations of parametric
+assumptions that only flexible models capture. Where findings conflict,
+consistency patterns are prioritized and discrepancies are noted as
+areas requiring further investigation.
 
 ### 6.5.1 Log-Odds Ratios (Multinomial Logistic Regression)
 
@@ -2543,6 +2578,27 @@ prediabetic, and diabetic individuals.
 
 ### 6.5.2 Global SHAP importance
 
+**SHAP Interpretation Methodology**
+
+To complement the parametric log-odds interpretation, we employ **SHAP
+(SHapley Additive exPlanations)** to quantify feature contributions in
+the XGBoost model. SHAP offers several advantages:
+
+-   **Model-agnostic foundation** grounded in game theory, enabling
+    comparison across model types
+-   **TreeSHAP algorithm** provides exact Shapley values by leveraging
+    XGBoost tree structure (no Monte Carlo approximation needed)
+-   **Multiclass compatibility** computes separate contributions for
+    each diabetes category (No diabetes, Prediabetes, Diabetes)
+-   **Mean absolute SHAP values** reveal global feature importance by
+    measuring how much each feature, on average, shifts predicted
+    probabilities from baseline
+
+By comparing SHAP importance with logistic regression odds ratios, we
+assess method convergence—agreement strengthens confidence in identified
+risk factors, while discrepancies highlight non-linearities the
+parametric model cannot capture.
+
 ```{r}
 #| include: false
 
@@ -2592,6 +2648,27 @@ sv_importance(sv, kind = "bar") +
 > indicators rather than lifestyle variables alone.
 
 ### 6.5.3 Variable Importance
+
+**Variable Importance: Gain Metric**
+
+XGBoost variable importance is computed using the **gain** metric, which
+quantifies each feature's contribution to model performance:
+
+-   **Gain** measures the total reduction in the loss function (e.g.,
+    multi-class log-loss) achieved whenever a feature is used to split
+    nodes across all trees in the ensemble
+-   Features with high gain contribute substantially to improving
+    predictions by creating splits that better separate diabetes
+    categories
+-   **Gain vs alternatives:** Unlike split frequency (which counts how
+    often a feature is used) or cover (which weights by number of
+    observations), gain directly captures predictive impact and effect
+    magnitude
+
+Higher gain values indicate features that most effectively reduce
+prediction error when incorporated into the model's decision rules. This
+metric complements SHAP importance by focusing on in-model utility
+rather than marginal contributions to individual predictions.
 
 ```{r}
 #| fig-height: 7
@@ -2684,7 +2761,7 @@ provides a robust validation of the primary drivers of the disease.
     targets for screening and preventative intervention.
 
 |  |  |  |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | **Method** | **Key Strength** | **Primary Top Predictors** |
 | **Multinomial Logistic** | Identifies the "Prediabetes" gradient | HighBP, BMI, Age |
 | **XGBoost VIP (Gain)** | Highlights overall model efficiency | HighBP, GenHlth, BMI |
@@ -2697,58 +2774,501 @@ application, the multinomial model remains the most "fit-for-purpose"
 tool due to its unique capacity to identify individuals in the critical
 prediabetic phase.
 
-# 7. Cardiovascular Event Prediction
+# Section 7: Socioeconomic Moderation of Cardiovascular Risk
 
-# References
+## 7.1. Modelling Objective
 
-1.  Aune, D., Norat, T., Leitzmann, M., Tonstad, S., & Vatten, L. J.
-    (2015). Physical activity and the risk of type 2 diabetes: A
-    systematic review and dose–response meta-analysis. *European Journal
-    of Epidemiology*, 30(7), 529–542.
+This section addresses the following research question:
 
-2.  Hill-Briggs, F., Adler, N. E., Berkowitz, S. A., et al. (2021).
-    Social determinants of health and diabetes: A scientific review.
-    *Diabetes Care*, 44(1), 258–279.
+> *To what extent do socioeconomic determinants, specifically income and
+> education, moderate the impact of clinical risk factors on the
+> prevalence of heart disease, and can the capture of complex feature
+> interactions provide superior predictive insights compared to
+> traditional additive assumptions?*
 
-3.  Ismail, L., Materwala, H., & Al Kaabi, J. (2021). Association of
-    risk factors with type 2 diabetes: A systematic review.
-    *Computational and Structural Biotechnology Journal*, 19, 1759–1785.
+The objective is:
 
-4.  Tatulashvili, S., Fagherazzi, G., Dow, C., Cohen, R., Fosse-Edorh,
-    S., & Balkau, B. (2020). Socioeconomic inequalities and type 2
-    diabetes complications: A systematic review. *Diabetes &
-    Metabolism*, 46(2), 89–99.
+-   **Interaction Analysis** – to investigate whether the predictive
+    weight of clinical markers (e.g., BMI, Blood Pressure) shifts
+    significantly across different socioeconomic strata.
 
-5.  Liu, X., Faes, L., Kale, A. U., et al. (2022). Machine
-    learning-based prediction models for cardiovascular disease risk
-    using electronic health records data: systematic review and
-    meta-analysis. *BMJ Open*, 12(6), e057995.
+-   **Predictive Optimization** – to evaluate if non-linear machine
+    learning frameworks (XGBoost) outperform traditional linear
+    frameworks (Logistic Regression) by capturing these latent
+    moderating effects. **Operationalizing Moderation**
 
-6.  Lundberg, S. M., & Lee, S. I. (2017). A unified approach to
-    interpreting model predictions. *Advances in Neural Information
-    Processing Systems*, 30, 4765–4774.
+The research question asks whether socioeconomic factors (income,
+education) moderate the effect of clinical risk factors (high blood
+pressure, BMI) on heart disease. In this analysis, moderation is
+operationalized as follows:
 
-7.  Roth, G. A., Johnson, C., Abajobir, A., et al. (2024). Heart disease
-    and stroke statistics—2024 update: A report from the American Heart
-    Association. *Circulation*, 149(8).
+-   **For Logistic Regression:** Serves as an additive baseline without
+    explicit interaction terms. Any moderation effects would require
+    post-hoc interaction term inclusion, which is beyond the exploratory
+    scope of this model.
+-   **For XGBoost:** Interactions are captured implicitly through
+    recursive tree partitioning. When the model splits on Income after
+    splitting on HighBP (or vice versa), it effectively models
+    conditional effects where the impact of one variable depends on the
+    value of another.
+-   **Evidence criterion:** Moderation will be assessed through SHAP
+    interaction analysis and partial dependence plots stratified by SES
+    groups. Significant variation in clinical risk effects across
+    income/education levels would support the moderation hypothesis.
 
-8.  Collins, S. R., Gunja, M. Z., & Aboulafia, G. N. (2023). *Paying for
-    it: How health care costs and medical debt are making Americans
-    sicker and poorer*. Commonwealth Fund.
+This approach leverages XGBoost's capacity to detect non-linear
+interactions without requiring manual interaction term specification.
 
-9.  Kessler, R. C., Aguilar-Gaxiola, S., Alonso, J., et al. (2010).
-    Relationship between household income and mental disorders.
-    *Archives of General Psychiatry*, 67(5), 474–483.
+## 7.2. Outcome Variable
 
-10. Liu, J., Jiang, N., Fan, A. Z., Thompson, W. W., Ding, R., & Ni, S.
-    (2023). Investigating the associations between socioeconomic factors
-    and unhealthy days among adults using zero-inflated negative
-    binomial regression. *SAGE Open*, 13(3).
+The dependent variable is **HeartDiseaseorAttack**, a binary outcome
+indicating whether the respondent has ever been diagnosed with coronary
+heart disease (CHD) or myocardial infarction (MI).
 
-11. Rust, K. F., Holt, J. B., & Lu, H. (2014). Models for count data
-    with an application to healthy days measures. *Preventing Chronic
-    Disease*, 11, E91.
+As identified in the exploratory phase, this variable exhibits a notable
+class imbalance, with the "No" category significantly outnumbering the
+"Yes" category. This necessitates the use of stratified sampling and
+specific evaluation metrics, such as the Area Under the ROC Curve
+(AUC-ROC) and F1-score, to ensure the model does not become biased
+toward the majority class.
 
-12. Gunja, M. Z., et al. (2023). *The cost of not getting care: Income
-    disparities in the affordability of health services across
-    high-income countries*. Commonwealth Fund.
+## 7.3 Training and Validation
+
+### 7.3.1 Data Partitioning and Resampling
+
+The dataset is partitioned into a 75% training set and a 25% testing set
+using stratified sampling on heart disease status. To ensure the models
+are robust and to prevent overfitting during the hyperparameter tuning
+phase (particularly for the XGBoost model), 5-fold stratified
+cross-validation is implemented within the training set. The test set
+remains strictly held-out for the final comparative evaluation between
+the additive logistic baseline and the interaction-heavy machine
+learning model.
+
+```{r}
+#| label: partitioning-resampling-rq2
+#| message: false
+
+set.seed(42)
+
+heart_split <- initial_split(
+  diab, 
+  prop = 0.75, 
+  strata = HeartDiseaseorAttack
+)
+
+heart_train <- training(heart_split)
+heart_test  <- testing(heart_split)
+
+heart_folds <- vfold_cv(
+  heart_train, 
+  v = 5, 
+  strata = HeartDiseaseorAttack
+)
+
+heart_train |> count(HeartDiseaseorAttack) |> mutate(prop = n/sum(n))
+heart_test  |> count(HeartDiseaseorAttack) |> mutate(prop = n/sum(n))
+```
+
+### 7.3.2 Recipe Definition and Preprocessing Strategy
+
+**Class Imbalance Strategy**
+
+The outcome exhibits substantial class imbalance (\~9% heart disease
+cases). To prevent models from defaulting to majority-class predictions,
+we apply **downsampling** with `under_ratio = 2.33`, retaining a 70-30
+majority-to-minority ratio rather than full balancing. This approach
+balances two objectives: (1) providing sufficient minority-class
+representation for model learning (\~30% of downsampled data), and (2)
+preserving moderate imbalance to reflect population base rates and avoid
+miscalibrated probability estimates. Downsampling is applied within
+cross-validation folds to prevent data leakage.
+
+```{r}
+#| label: recipe-rq2
+
+
+heart_recipe <- recipe(HeartDiseaseorAttack ~ ., data = heart_train) |>
+  step_nzv(all_predictors()) |>
+  step_ordinalscore(Age, Education, Income, GenHlth) |>
+  step_dummy(all_nominal_predictors()) |>
+  step_normalize(BMI, MentHlth, PhysHlth) |>
+  step_downsample(HeartDiseaseorAttack, under_ratio = 2.33)
+
+print(heart_recipe)
+```
+
+### 7.3.3 Model Specification
+
+We define the candidate models for **RQ2** To address the research
+question, we compare a traditional parametric baseline against a
+high-capacity gradient-boosted ensemble. This allows us to determine if
+the inclusion of non-linear feature interactions (socioeconomic
+moderation) significantly improves the model's ability to identify
+cardiovascular risk.
+
+**The Models**
+
+|  |  |  |  |
+|------------------|------------------|------------------|------------------|
+| **Model** | **Type** | **Primary Function** | **Key Strengths** |
+| **Logistic Regression** | Parametric | Linear Baseline | Provides interpretable Odds Ratios for clinical and SES factors; assumes additive effects. |
+| **XGBoost** | Ensemble (Boosting) | Interaction Discovery | Specifically optimized to capture non-linearities and moderation effects between variables. |
+
+***Note***
+
+> The selection of **XGBoost,** instead of Random Forest**,** for this
+> research question is informed by its performance in the preceding
+> analysis of diabetes status (RQ1). While RQ1 dealt with a multi-class
+> outcome, XGBoost is equally well-suited for this binary classification
+> of heart disease. Its gradient boosting framework is particularly
+> effective at preventing the model from becoming biased toward the
+> majority "No" class, ensuring that the clinical and socioeconomic
+> patterns of the minority "Yes" class are accurately captured and
+> weighted.
+
+```{r}
+#| label: model-specs-rq2
+lr_spec <- logistic_reg(
+  penalty = tune(),
+  mixture = tune()) |>
+  set_engine("glmnet") |>
+  set_mode("classification")
+
+
+xgb_spec <- boost_tree(
+  trees = 1024,
+  tree_depth = tune(),
+  learn_rate = tune(),
+  loss_reduction = tune(),
+  stop_iter = 20) |>
+  set_engine("xgboost") |>
+  set_mode("classification")
+```
+
+### 7.3.4 Workflow Set Definition
+
+Following the methodology in Section 6, we utilize `workflow_sets` to
+ensure both models are evaluated using the identical finalized recipe
+and cross-validation folds.
+
+```{r}
+#| label: workflow-set-fit
+
+heart_models <- workflow_set(
+  preproc = list(base_rec = heart_recipe),
+  models = list(logistic = lr_spec, xgboost = xgb_spec),
+  cross = TRUE
+)
+```
+
+### 7.3.5 Metric Selection and Model Execution
+
+**Metrics**
+
+To evaluate the models, we define a robust metric set that accounts for
+the class imbalance inherent in the dataset. While **ROC-AUC** provides
+a general measure of classifier quality, **PR-AUC** and the **F1-score**
+are prioritized to ensure the model effectively identifies the "Yes"
+(Heart Disease) cases without excessive false positives.
+
+```{r}
+#| label: metrics-rq2
+heart_metrics <- metric_set(
+  roc_auc,
+  pr_auc,
+  sens,
+  spec,
+  f_meas
+)
+```
+
+**Model Execution and Resampling**
+
+With the metrics defined, we map the `fit_resamples` function across our
+workflow set. This process uses the 5-fold cross-validation established
+in Section 7.3 to generate stable performance estimates.
+
+```{r}
+#| label: workflow-execution-rq2
+
+# cl <- makePSOCKcluster(parallel::detectCores(logical = FALSE))
+# registerDoParallel(cl)
+# 
+# heart_results <- heart_models |>
+#   workflow_map(
+#     fn = "tune_grid",
+#     resamples = heart_folds,
+#     grid = 10,
+#     metrics = heart_metrics,
+#     seed = 42,
+#     control = control_grid(
+#       save_pred = TRUE,
+#       parallel_over = "everything",
+#       verbose = TRUE,
+#       event_level = "second")
+#   )
+# 
+# stopCluster(cl)
+# 
+# write_rds(heart_results, "heart_results.rds")
+heart_results <- read_rds('heart_results.rds')
+```
+
+### 7.3.6 Comparative Performance Visualization
+
+```{r}
+#| label: eval-results-rq2
+#| message: false
+#| warning: false
+#| fig-height: 8
+#| fig-width: 14
+
+m1 <- pretty_autoplot(heart_results, 
+                      "roc_auc", "ROC–AUC", "Discrimination (ROC–AUC)")
+m2 <- pretty_autoplot(heart_results, 
+                      "pr_auc", "PR–AUC", "Precision-Recall AUC")
+m3 <- pretty_autoplot(heart_results, 
+                      "f_meas", "F1-score", "F1 (Imbalance-aware)")
+m4 <- pretty_autoplot(heart_results, 
+                      "sens", "Sensitivity", "Detection Rate (Recall)")
+
+(m1 | m2) / (m3 | m4) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+## 7.4 Final Model Extraction and Test Set Evaluation
+
+```{r}
+#| label: final-comparison-rq2
+
+best_lr_id <- "base_rec_logistic"
+best_xgb_id <- "base_rec_xgboost"
+
+final_lr_wflow <-
+  heart_results |>
+  extract_workflow(best_lr_id) |>
+  finalize_workflow(
+    heart_results |>
+      extract_workflow_set_result(best_lr_id) |>
+      select_best(metric = "pr_auc")
+  )
+
+final_xgb_wflow <-
+  heart_results |>
+  extract_workflow(best_xgb_id) |>
+  finalize_workflow(
+    heart_results |>
+      extract_workflow_set_result(best_xgb_id) |>
+      select_best(metric = "pr_auc")
+  )
+```
+
+```{r}
+test_results_lr <- last_fit(
+  final_lr_wflow, split = heart_split, metrics = heart_metrics)
+
+test_results_xgb <- last_fit(
+  final_xgb_wflow, split = heart_split, metrics = heart_metrics)
+```
+
+```{r}
+final_comparison <- bind_rows(
+  test_results_lr |> collect_metrics() |> mutate(model = "Regularized LR"),
+  test_results_xgb |> collect_metrics() |> mutate(model = "Tuned XGBoost")
+) |> 
+  select(model, .metric, .estimate) |> 
+  pivot_wider(names_from = .metric, values_from = .estimate)
+
+print(final_comparison)
+```
+
+```{r}
+all_preds <- bind_rows(
+  test_results_lr |> collect_predictions() |> mutate(model = "Logistic Regression"),
+  test_results_xgb |> collect_predictions() |> mutate(model = "XGBoost")
+)
+```
+
+```{r}
+#| fig-height: 6
+#| fig-width: 12
+
+cm_lr <- test_results_lr |> 
+  collect_predictions() |> 
+  conf_mat(HeartDiseaseorAttack, .pred_class) |> 
+  autoplot(type = "heatmap") + 
+  labs(title = "LR: Predicting everyone has Heart Disease")
+
+cm_xgb <- test_results_xgb |> 
+  collect_predictions() |> 
+  conf_mat(HeartDiseaseorAttack, .pred_class) |> 
+  autoplot(type = "heatmap") + 
+  labs(title = "XGBoost: Balanced Predictions")
+
+cm_lr + cm_xgb
+```
+
+```{r}
+#| fig-height: 7
+#| fig-width: 14
+
+final_xgb_fit <- extract_fit_parsnip(test_results_xgb)
+
+final_xgb_fit |> 
+  vip(num_features = 20, 
+      geom = "col",
+      aesthetics = list(fill = "steelblue",color = 'black', alpha = 0.8)) +
+  labs(title = "Variable Importance: XGBoost Model",
+       subtitle = "Top 15 predictors based on gain")
+```
+
+```{r}
+xgb_engine <- extract_fit_engine(final_xgb_fit)
+
+test_processed <- bake(
+  prep(extract_preprocessor(final_xgb_wflow)),
+  new_data = testing(heart_split)
+)
+
+X <- test_processed |> select(-HeartDiseaseorAttack) |> as.matrix()
+
+shp <- shapviz(xgb_engine, X_pred = X)
+
+```
+
+```{r}
+shp_flipped <- shapviz(-shp$S, X = shp$X, baseline = -shp$baseline)
+```
+
+```{r}
+#| fig-height: 7
+#| fig-width: 14
+sv_importance(shp_flipped, kind = "bar", max_display = 15) +
+  labs(title = "SHAP Feature Importance", x = "Mean |SHAP Value|")
+```
+
+```{r}
+#| fig-height: 7
+#| fig-width: 14
+sv_importance(shp_flipped, kind = "beeswarm", max_display = 15) +
+  labs(title = "SHAP Beeswarm Plot")
+```
+
+```{r}
+#| fig-height: 9
+#| fig-width: 16
+
+p1 <- sv_dependence(shp_flipped, v = "HighBP_High", color_var = "Income")
+p2 <- sv_dependence(shp_flipped, v = "HighChol_High", color_var = "Income")
+p3 <- sv_dependence(shp_flipped, v = "GenHlth", color_var = "Income")
+p4 <- sv_dependence(shp_flipped, v = "BMI", color_var = "Income")
+
+(p1 + p2) / (p3 + p4) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+```{r}
+#| fig-height: 9
+#| fig-width: 16
+
+p5 <- sv_dependence(shp_flipped, v = "HighBP_High", color_var = "Education")
+p6 <- sv_dependence(shp_flipped, v = "HighChol_High", color_var = "Education")
+p7 <- sv_dependence(shp_flipped, v = "GenHlth", color_var = "Education")
+p8 <- sv_dependence(shp_flipped, v = "BMI", color_var = "Education")
+
+(p5 + p6) / (p7 + p8) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+```{r}
+#| fig-height: 10
+#| fig-width: 15
+
+low_risk_idx <- which.min(rowSums(as.matrix(shp_flipped$S)))
+high_risk_idx <- which.max(rowSums(as.matrix(shp_flipped$S)))
+
+w1 <- sv_waterfall(shp_flipped, row_id = high_risk_idx) + 
+  labs(title = "Waterfall: Highest Risk Individual",
+       subtitle = "Features pushing prediction above baseline",
+       x = "SHAP Contribution (log-odds)")
+
+w2 <- sv_waterfall(shp_flipped, row_id = low_risk_idx) + 
+  labs(title = "Waterfall: Lowest Risk Individual",
+       subtitle = "Features pushing prediction below baseline",
+       x = "SHAP Contribution (log-odds)")
+
+f1 <- sv_force(shp_flipped, row_id = high_risk_idx) + 
+  labs(title = "Force Plot: Highest Risk Individual",
+       subtitle = "Red = increases risk | Blue = decreases risk")
+
+f2 <- sv_force(shp_flipped, row_id = low_risk_idx) + 
+  labs(title = "Force Plot: Lowest Risk Individual",
+       subtitle = "Red = increases risk | Blue = decreases risk")
+
+(w1 | w2) 
+
+(f1 / f2)
+```
+
+```{r}
+set.seed(123)
+X_sample <- X[sample(nrow(X), 3000), ]
+shp_i <- shapviz(xgb_engine, X_pred = X_sample, interactions = TRUE)
+```
+
+```{r}
+shp_i_flipped <- shapviz(-shp_i$S, X = shp_i$X, baseline = -shp_i$baseline)
+```
+
+```{r}
+
+sv_interaction(shp_i_flipped) +
+  labs(title = "SHAP Interaction Values",
+       subtitle = "Pairwise feature interaction strengths")
+
+sv_dependence(shp_i_flipped, v = "HighBP_High", color_var = "Income", interactions = TRUE) +
+  labs(title = "HighBP × Income Interaction")
+
+sv_dependence(shp_i_flipped, v = "HighChol_High", color_var = "Income", interactions = TRUE) +
+  labs(title = "HighChol × Income Interaction")
+
+sv_dependence(shp_i_flipped, v = "GenHlth", color_var = "Income", interactions = TRUE) +
+  labs(title = "GenHlth × Income Interaction")
+
+sv_dependence(shp_i_flipped, v = "HighBP_High", color_var = "Education", interactions = TRUE) +
+  labs(title = "HighBP × Education Interaction")
+
+sv_dependence(shp_i_flipped, v = "GenHlth", color_var = "Education", interactions = TRUE) +
+  labs(title = "GenHlth × Education Interaction")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
