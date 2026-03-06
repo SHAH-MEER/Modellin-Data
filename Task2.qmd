@@ -2528,6 +2528,7 @@ multinom_coefs_tidy <- multinom_coefs_tidy |>
 ```
 
 ```{r}
+#| label: ods-plot-rq1
 #| fig-height: 7
 #| fig-width: 14
 multinom_coefs_tidy |>
@@ -2600,33 +2601,38 @@ risk factors, while discrepancies highlight non-linearities the
 parametric model cannot capture.
 
 ```{r}
-#| include: false
+#| label: shapviz-rq1
 
-xgb_booster <- xgb_final_fit |> 
-  extract_fit_parsnip() |> 
-  pluck("fit")
+xgb_engine <- extract_fit_engine(xgb_final_fit)
+
+test_processed <- bake(
+  prep(extract_preprocessor(xgb_final_wf)),
+  new_data = diab_test
+)
+
+X <- test_processed |>
+  select(-Diabetes) |>
+  as.matrix()
+
+set.seed(123)
+X_sample <- X[sample(nrow(X), 10000), ]
+
+# shp <- shapviz(xgb_engine, X_pred = X_sample)
+# write_rds(shp, "shp_rq1.rds")
+
+# Load precomputed SHAP values to avoid recomputing expensive shapviz calculations
+shp <- read_rds("shp_rq1.rds")
 
 
-mold <- extract_mold(xgb_final_fit)
-
-X <- mold$predictors
-
-X_mat <- as.matrix(X)
-
-y <- mold$outcomes
-
-sv <- shapviz(
-  xgb_booster,
-  X_pred = X_mat,  
-  X = X_mat)
 ```
 
 ```{r}
+#| label: global-shp-rq1
 #| message: false
 #| warning: false
 #| fig-height: 7
 #| fig-width: 14
-sv_importance(sv, kind = "bar") +
+sv_importance(shp, kind = "bar") +
   scale_fill_discrete(
     labels = c(
       "No diabetes",
@@ -2671,6 +2677,7 @@ metric complements SHAP importance by focusing on in-model utility
 rather than marginal contributions to individual predictions.
 
 ```{r}
+#| label: vip-rq1
 #| fig-height: 7
 #| fig-width: 14
 xgb_final_fit |> 
@@ -2774,7 +2781,7 @@ application, the multinomial model remains the most "fit-for-purpose"
 tool due to its unique capacity to identify individuals in the critical
 prediabetic phase.
 
-# Section 7: Socioeconomic Moderation of Cardiovascular Risk
+# 7. Socioeconomic Moderation of Cardiovascular Risk
 
 ## 7.1. Modelling Objective
 
@@ -3038,7 +3045,60 @@ m4 <- pretty_autoplot(heart_results,
   theme(legend.position = "bottom")
 ```
 
+This figure compares the performance of all candidate workflows across
+four evaluation metrics ranked from best to worst.
+
+For ROC–AUC, most workflows achieve very similar discrimination
+performance around the mid-0.80 range, indicating that both model
+families are generally capable of separating the classes effectively.
+Logistic regression workflows appear more stable across the ranking,
+while some boosted tree configurations show a noticeable decline toward
+the lower ranks, suggesting greater sensitivity to preprocessing or
+tuning choices.
+
+The Precision–Recall AUC plot shows lower absolute values, which is
+expected in imbalanced classification settings. Both models perform
+similarly across most workflows, although boosted tree models display
+slightly greater variability, with a clearer performance drop among the
+worst-ranked configurations.
+
+The F1-score results show a narrow band among the higher-ranked
+workflows, indicating that several configurations achieve a balanced
+trade-off between precision and recall. Logistic regression workflows
+maintain relatively consistent F1 values, whereas boosted tree models
+again exhibit more spread, with some configurations performing
+noticeably worse.
+
+Finally, the Detection Rate (Recall) plot highlights differences in
+sensitivity. Top-ranked workflows for both models achieve similar recall
+levels, but logistic regression maintains more consistent detection
+rates across ranks. Some boosted tree workflows show reduced recall in
+lower ranks, indicating weaker ability to identify positive cases in
+those configurations.
+
+Overall, logistic regression workflows demonstrate more stable
+performance across preprocessing variations, while boosted tree models
+show slightly greater variability. Despite this, the best-performing
+configurations of both models achieve broadly comparable predictive
+performance across all evaluation metrics.
+
 ## 7.4 Final Model Extraction and Test Set Evaluation
+
+This stage identifies the best-performing workflow for each modelling
+approach based on cross-validated tuning results. The logistic
+regression and XGBoost workflows with the highest Precision–Recall AUC
+are selected, as PR–AUC provides a more informative evaluation metric in
+the presence of class imbalance.
+
+For each model type, the optimal hyperparameter configuration obtained
+during tuning is applied to the corresponding workflow, producing a
+finalised model specification. These final workflows therefore represent
+the best-performing logistic regression and boosted tree models
+identified during the resampling stage.
+
+The purpose of this step is to prepare the final candidate models for
+unbiased evaluation on the held-out test dataset, enabling a direct
+comparison of their predictive performance.
 
 ```{r}
 #| label: final-comparison-rq2
@@ -3065,7 +3125,18 @@ final_xgb_wflow <-
   )
 ```
 
+The finalised logistic regression and XGBoost models are evaluated on
+the held-out test set to obtain an unbiased estimate of predictive
+performance.
+
+This evaluation provides a fair comparison of the two modelling
+approaches under identical conditions. The resulting performance metrics
+summarise how well each model generalises to unseen data, allowing the
+relative effectiveness of logistic regression and the boosted tree model
+to be assessed for the prediction task.
+
 ```{r}
+#| label: final-pred-rq2
 test_results_lr <- last_fit(
   final_lr_wflow, split = heart_split, metrics = heart_metrics)
 
@@ -3074,6 +3145,7 @@ test_results_xgb <- last_fit(
 ```
 
 ```{r}
+#| label: comaprison-results-rq2
 final_comparison <- bind_rows(
   test_results_lr |> collect_metrics() |> mutate(model = "Regularized LR"),
   test_results_xgb |> collect_metrics() |> mutate(model = "Tuned XGBoost")
@@ -3084,14 +3156,49 @@ final_comparison <- bind_rows(
 print(final_comparison)
 ```
 
+The final test-set evaluation compares the predictive performance of the
+Regularized Logistic Regression model and the Tuned XGBoost model across
+multiple metrics.
+
+The Regularized Logistic Regression model achieves a sensitivity of
+1.00, specificity of 0.00, F1-score of 0.950, ROC–AUC of 0.50, and
+PR–AUC of 0.953. While the high sensitivity and F1-score may initially
+appear strong, the specificity of zero indicates that the model predicts
+all observations as the positive class. This behaviour results in no
+ability to correctly identify negative cases, which is reflected in the
+ROC–AUC of 0.50, equivalent to random classification. Consequently, the
+model fails to provide meaningful class discrimination despite
+apparently high values on certain metrics.
+
+In contrast, the Tuned XGBoost model demonstrates substantially stronger
+and more balanced predictive performance. It achieves a sensitivity of
+0.882, specificity of 0.550, F1-score of 0.915, ROC–AUC of 0.840, and
+PR–AUC of 0.979. The high ROC–AUC indicates strong discrimination
+between classes, while the high PR–AUC suggests effective performance
+under class imbalance. Although the specificity is moderate, the model
+successfully identifies a meaningful proportion of both positive and
+negative cases, resulting in a more balanced and practically useful
+classifier.
+
+Overall, the results indicate that the Tuned XGBoost model substantially
+outperforms the Regularized Logistic Regression model. The boosted tree
+model provides strong discrimination and maintains a reasonable balance
+between sensitivity and specificity, suggesting that the underlying
+relationships between predictors and heart disease are better captured
+by a flexible non-linear model than by a linear logistic framework.
+
 ```{r}
+#| label: result-bind
 all_preds <- bind_rows(
   test_results_lr |> collect_predictions() |> mutate(model = "Logistic Regression"),
   test_results_xgb |> collect_predictions() |> mutate(model = "XGBoost")
 )
 ```
 
+### 7.4.3 Confusion Matrix Analysis
+
 ```{r}
+#| label: conf-mat-rq2
 #| fig-height: 6
 #| fig-width: 12
 
@@ -3110,7 +3217,37 @@ cm_xgb <- test_results_xgb |>
 cm_lr + cm_xgb
 ```
 
+The confusion matrices provide a clearer interpretation of how each
+model performs at the class prediction level.
+
+The regularized logistic regression model predicts every observation as
+the positive class (Heart Disease). As a result, all true negative cases
+(57,436) are misclassified as positive, while all true positive cases
+(5,984) are also predicted as positive. This explains the perfect
+sensitivity (1.00) and zero specificity observed earlier. Although the
+model detects all positive cases, it completely fails to identify
+individuals without heart disease, demonstrating that it has collapsed
+into a trivial classifier that does not meaningfully distinguish between
+classes.
+
+In contrast, the tuned XGBoost model produces more balanced predictions
+across both classes. It correctly identifies 50,682 individuals without
+heart disease and 3,289 individuals with heart disease, while
+misclassifying 6,754 non-cases as positive and 2,695 true cases as
+negative. This reflects a more balanced trade-off between sensitivity
+and specificity, consistent with the stronger ROC–AUC and overall
+performance observed in the test-set evaluation.
+
+Overall, the confusion matrices reinforce the earlier metric-based
+comparison. Logistic regression fails to provide meaningful class
+separation, whereas XGBoost demonstrates effective discrimination by
+correctly identifying a substantial proportion of both positive and
+negative cases.
+
+### 7.4.4 Variable Importance Analysis
+
 ```{r}
+#| label: vip-rq2
 #| fig-height: 7
 #| fig-width: 14
 
@@ -3124,39 +3261,211 @@ final_xgb_fit |>
        subtitle = "Top 15 predictors based on gain")
 ```
 
+> The variable importance plot presents the relative contribution of
+> predictors to the final XGBoost model based on gain, which measures
+> how much each variable improves the model’s decision splits.
+>
+> General health (GenHlth) emerges as the most influential predictor,
+> followed closely by age. This indicates that overall health status and
+> age group are the strongest contributors to distinguishing individuals
+> with and without heart disease in the model. High blood pressure and
+> high cholesterol also rank highly, reinforcing the importance of
+> cardiometabolic risk factors in predicting heart disease outcomes.
+>
+> Several additional variables contribute moderate predictive value,
+> including sex, difficulty walking, smoking status, and diabetes
+> status. These predictors likely capture functional limitations and
+> behavioural risk factors associated with cardiovascular health.
+>
+> In contrast, lifestyle variables such as fruit consumption, vegetable
+> consumption, physical activity, and alcohol use show minimal
+> importance within the model. Socioeconomic indicators such as
+> education and income also appear to contribute relatively little
+> compared with clinical and health-status variables.
+>
+> Overall, the importance ranking suggests that the XGBoost model
+> primarily relies on indicators of general health and cardiometabolic
+> risk, with demographic and behavioural factors playing a secondary
+> role in predicting heart disease status.
+
+## 7.5 SHAP-Based Model Interpretation
+
+To interpret the predictions of the final XGBoost model, SHAP (SHapley
+Additive exPlanations) values are computed. SHAP provides a
+model-agnostic framework for explaining complex machine learning models
+by decomposing each prediction into additive contributions from
+individual predictors.
+
+Because the test dataset is large, a random sample of 5,000 observations
+is drawn to make the SHAP computation tractable while still providing a
+representative explanation of the model’s behaviour. The predictors used
+for explanation correspond to the processed feature matrix used by the
+fitted XGBoost engine.
+
 ```{r}
-xgb_engine <- extract_fit_engine(final_xgb_fit)
+#| label: shapviz-rq2
+# xgb_engine <- extract_fit_engine(final_xgb_fit)
+# 
+# test_processed <- bake(
+#   prep(extract_preprocessor(final_xgb_wflow)),
+#   new_data = testing(heart_split)
+# )
+# 
+# X <- test_processed |> 
+#   select(-HeartDiseaseorAttack) |> 
+#   as.matrix()
+# 
+# set.seed(123)
+# X_sample <- X[sample(nrow(X), 10000), ]
+# shp <- shapviz(xgb_engine, X_pred = X_sample)
+# 
+# write_rds(shp,"shp_rq2.rds")
 
-test_processed <- bake(
-  prep(extract_preprocessor(final_xgb_wflow)),
-  new_data = testing(heart_split)
-)
 
-X <- test_processed |> select(-HeartDiseaseorAttack) |> as.matrix()
-
-shp <- shapviz(xgb_engine, X_pred = X)
+# Load precomputed SHAP values to avoid recomputing expensive shapviz calculations
+shp <- read_rds("shp_rq2.rds")
 
 ```
 
+The SHAP values are subsequently sign-adjusted to align with the outcome
+orientation used in this analysis. In this dataset the positive event is
+encoded as the second level of the outcome factor (No = 0, Yes = 1),
+whereas the SHAP implementation assumes that the first level corresponds
+to the event of interest. As a result, the SHAP values are multiplied by
+−1 so that positive contributions correctly represent increased
+predicted risk of heart disease and negative contributions represent
+decreased risk. This adjustment ensures that subsequent SHAP
+visualisations are interpreted consistently with the outcome definition
+used throughout the analysis.
+
 ```{r}
+#| label: flip-shp
 shp_flipped <- shapviz(-shp$S, X = shp$X, baseline = -shp$baseline)
 ```
 
+### 7.5.1 Global Feature Importance (SHAP)
+
+The SHAP feature importance plot ranks predictors according to their
+average absolute SHAP value, which represents the overall magnitude of
+each variable’s contribution to the model’s predictions across all
+observations.
+
 ```{r}
+#| label: global-shp-rq2
+#| dev: png
 #| fig-height: 7
 #| fig-width: 14
 sv_importance(shp_flipped, kind = "bar", max_display = 15) +
   labs(title = "SHAP Feature Importance", x = "Mean |SHAP Value|")
 ```
 
+> Age emerges as the most influential predictor, indicating that changes
+> in age group have the largest average effect on predicted heart
+> disease risk. General health (GenHlth) is the second most important
+> variable, suggesting that self-reported health status strongly
+> influences the model’s assessment of cardiovascular risk.
+>
+> Cardiometabolic indicators such as high blood pressure (HighBP) and
+> high cholesterol (HighChol) also show substantial importance,
+> reinforcing their established role as key risk factors for
+> cardiovascular disease. These variables contribute strongly to the
+> model’s decision structure and appear consistently among the top
+> predictors.
+>
+> Several demographic and behavioural variables provide moderate
+> contributions, including sex, smoking status, difficulty walking, and
+> diabetes status. These predictors likely capture functional health
+> limitations and behavioural risk factors associated with
+> cardiovascular conditions.
+>
+> In contrast, variables such as BMI, mental health, alcohol
+> consumption, education, and healthcare cost barriers show relatively
+> small mean SHAP values. This suggests that, within the context of the
+> full model, they contribute comparatively little to the prediction of
+> heart disease status.
+>
+> Overall, the SHAP importance ranking broadly aligns with the earlier
+> model-based variable importance results, highlighting age, general
+> health, and cardiometabolic risk factors as the dominant predictors
+> driving the XGBoost model’s predictions.
+
+### 7.5.2 Distribution of Feature Effects (SHAP Beeswarm Plot)
+
+The SHAP beeswarm plot provides a detailed view of how individual
+feature values influence the predicted probability of heart disease
+across observations. Each point represents a single observation, where
+the horizontal position indicates the SHAP value (the contribution of
+the feature to the prediction), and colour represents the magnitude of
+the feature value.
+
 ```{r}
+#| label: shap-beesawrm-rq2
+#| dev: png
 #| fig-height: 7
 #| fig-width: 14
 sv_importance(shp_flipped, kind = "beeswarm", max_display = 15) +
   labs(title = "SHAP Beeswarm Plot")
 ```
 
+> Age shows the widest spread of SHAP values, indicating that it has the
+> strongest and most consistent influence on model predictions. Higher
+> age categories are associated with positive SHAP values, meaning they
+> increase the predicted risk of heart disease, whereas lower age values
+> tend to reduce predicted risk.
+>
+> General health (GenHlth) also demonstrates a strong directional
+> effect. Poorer health levels (higher values) shift predictions toward
+> higher heart disease risk, while better self-reported health
+> contributes negatively to the prediction. Similarly, clinical risk
+> factors such as high blood pressure and high cholesterol consistently
+> push predictions toward increased risk when present.
+>
+> Demographic and behavioural factors such as sex, smoking, and
+> difficulty walking exhibit moderate contributions, where the presence
+> of these conditions tends to increase predicted risk but with smaller
+> magnitudes compared to primary clinical indicators.
+>
+> Socioeconomic variables, particularly income and education, display
+> comparatively smaller SHAP magnitudes. Their distributions are centred
+> closer to zero, indicating that while they contribute to predictions,
+> their direct effects are weaker than clinical risk factors. This
+> suggests that socioeconomic determinants may influence predictions
+> more subtly, potentially through interactions with health-related
+> variables rather than through strong independent effects.
+>
+> Overall, the beeswarm distribution reinforces that the model’s
+> predictions are primarily driven by clinical health indicators, while
+> demographic and socioeconomic factors contribute secondary adjustments
+> to predicted heart disease risk.
+
+### 7.5.3 SHAP Dependence Analysis
+
+SHAP dependence plots are used to examine how the effect of key clinical
+risk factors on predicted heart disease risk varies across levels of
+socioeconomic status. Unlike global SHAP importance measures, dependence
+plots allow the relationship between a specific predictor and the model
+output to be visualised while simultaneously colouring observations by a
+second variable.
+
+In this analysis, the plots are used to explore whether socioeconomic
+determinants, specifically income and education, moderate the impact of
+major clinical risk factors. By visualising SHAP values for variables
+such as high blood pressure, high cholesterol, general health, and BMI
+while colouring observations by socioeconomic indicators, it becomes
+possible to assess whether the contribution of these clinical predictors
+differs across socioeconomic groups.
+
+This approach directly addresses the research question by investigating
+whether complex interaction effects between socioeconomic determinants
+and clinical risk factors are captured by the XGBoost model, and whether
+these interactions provide insights beyond traditional additive
+modelling assumptions.
+
+#### **Clinical Risk Factors by Income**
+
 ```{r}
+#| label: income-dependence
+#| dev: png
 #| fig-height: 9
 #| fig-width: 16
 
@@ -3170,7 +3479,53 @@ p4 <- sv_dependence(shp_flipped, v = "BMI", color_var = "Income")
   theme(legend.position = "bottom")
 ```
 
+> The dependence plots illustrate how the contribution of key clinical
+> risk factors to heart disease prediction varies across different
+> income levels.
+>
+> For high blood pressure, the SHAP values shift clearly from negative
+> to positive when the condition is present, indicating that individuals
+> with high blood pressure are predicted to have a substantially higher
+> risk of heart disease. The colour distribution across the two clusters
+> shows little systematic separation by income level, suggesting that
+> the effect of high blood pressure on predicted risk is relatively
+> consistent across socioeconomic groups.
+>
+> A similar pattern is observed for high cholesterol. When high
+> cholesterol is present, SHAP values increase markedly, indicating an
+> increased contribution to predicted heart disease risk. As with high
+> blood pressure, the colour gradient representing income does not
+> display strong vertical separation within the clusters, implying that
+> income does not strongly moderate the impact of high cholesterol on
+> model predictions.
+>
+> General health demonstrates a strong monotonic relationship with SHAP
+> values. As self-reported health worsens (moving from excellent toward
+> poor health), the SHAP contribution increases steadily, indicating a
+> progressively higher predicted risk of heart disease. While
+> observations from different income levels are present within each
+> health category, the dominant pattern remains the effect of worsening
+> health rather than a clear socioeconomic interaction.
+>
+> The BMI dependence plot shows a weaker and more diffuse pattern. SHAP
+> values remain close to zero across most BMI values, with only modest
+> variation in predicted risk. Income levels are mixed throughout the
+> distribution, again indicating limited evidence that income
+> substantially modifies the influence of BMI on predicted heart disease
+> risk.
+>
+> Overall, these results suggest that the primary drivers of heart
+> disease prediction in the model are the clinical risk factors
+> themselves. Although the XGBoost model is capable of capturing complex
+> feature interactions, the dependence plots provide limited visual
+> evidence that income strongly moderates the impact of these clinical
+> predictors on predicted heart disease prevalence.
+
+#### **Clinical Risk Factors by Education**
+
 ```{r}
+#| label: edu-dependence
+#| dev: png
 #| fig-height: 9
 #| fig-width: 16
 
@@ -3184,7 +3539,74 @@ p8 <- sv_dependence(shp_flipped, v = "BMI", color_var = "Education")
   theme(legend.position = "bottom")
 ```
 
+> When coloured by education rather than income, the SHAP dependence
+> plots show a very similar overall structure. High blood pressure and
+> high cholesterol both produce clear upward shifts in SHAP values when
+> present, indicating that these conditions contribute positively to
+> predicted heart disease risk. However, the colour distribution is
+> broadly mixed within each cluster, providing little visual evidence
+> that educational attainment substantially changes the effect of either
+> condition.
+>
+> General health again shows the clearest monotonic relationship with
+> model output. As self-reported health worsens, SHAP values increase
+> steadily from negative to strongly positive, indicating progressively
+> greater predicted cardiovascular risk. Although observations from
+> different education levels are present within each category, the
+> dominant pattern is the strong main effect of general health rather
+> than a clear education-based separation.
+>
+> BMI continues to display a comparatively weak and diffuse pattern.
+> Most SHAP contributions remain close to zero, with only modest
+> positive contributions at the lower end and slight negative
+> contributions across much of the mid-range. Educational levels are
+> intermingled throughout the plot, suggesting limited moderation of the
+> BMI effect by education.
+>
+> Overall, the education-coloured dependence plots provide little
+> evidence that educational attainment strongly moderates the
+> relationship between these clinical risk factors and predicted heart
+> disease risk. As with the income-based plots, the dominant signal
+> comes from the direct contribution of the clinical variables
+> themselves. This suggests that, within the XGBoost model,
+> socioeconomic moderation by education is limited for these particular
+> predictors.
+
+### 7.5.4 Local SHAP Explanations: Individual-Level Predictions
+
+To complement the global interpretation of the model, SHAP local
+explanation plots are used to examine how individual predictions are
+formed. Two observations are selected: the individual with the highest
+predicted risk of heart disease and the individual with the lowest
+predicted risk. These cases are identified by selecting the rows with
+the largest and smallest total SHAP contributions across all features.
+
+The waterfall plots show how each predictor shifts the model output away
+from the baseline prediction for a specific individual. Features with
+positive SHAP values increase the predicted probability of heart
+disease, while negative values decrease it. For the highest-risk
+individual, several clinical variables contribute positively to the
+prediction, cumulatively pushing the model output well above the
+baseline. In contrast, for the lowest-risk individual, protective
+factors or the absence of risk conditions contribute negatively, pulling
+the prediction below the baseline.
+
+The force plots provide a complementary visualisation of the same
+explanations by displaying how features push the prediction toward
+higher or lower risk simultaneously. Red features indicate variables
+increasing predicted heart disease risk, while blue features indicate
+variables decreasing it.
+
+These local explanations demonstrate how the XGBoost model combines
+multiple demographic, clinical, and socioeconomic predictors to generate
+individual-level predictions. This illustrates the model’s ability to
+capture complex interactions and heterogeneous effects across
+individuals, providing interpretable insights beyond aggregate feature
+importance measures.
+
 ```{r}
+#| label: high-low-risk-shap
+#| dev: png
 #| fig-height: 10
 #| fig-width: 15
 
@@ -3214,61 +3636,432 @@ f2 <- sv_force(shp_flipped, row_id = low_risk_idx) +
 (f1 / f2)
 ```
 
-```{r}
-set.seed(123)
-X_sample <- X[sample(nrow(X), 3000), ]
-shp_i <- shapviz(xgb_engine, X_pred = X_sample, interactions = TRUE)
-```
+The local SHAP explanations illustrate how the model combines individual
+features to generate predictions for specific observations. Two
+contrasting cases are shown: the individual with the highest predicted
+risk of heart disease and the individual with the lowest predicted risk.
+
+For the highest-risk individual, the waterfall and force plots show that
+several clinical and demographic risk factors push the prediction
+substantially above the baseline. Poor general health (GenHlth = 5)
+provides the largest positive contribution to the prediction, followed
+by older age (Age = 13). Additional factors such as the presence of high
+blood pressure, male sex, diabetes, difficulty walking, and high
+cholesterol all contribute positively to the predicted risk. Together,
+these factors accumulate to shift the model output well above the
+baseline log-odds, indicating a strong predicted likelihood of heart
+disease.
+
+In contrast, the lowest-risk individual shows a sequence of negative
+SHAP contributions that push the prediction far below the baseline.
+Younger age (Age = 2) provides the strongest protective effect, followed
+by excellent self-reported health (GenHlth = 1). The absence of major
+clinical risk factors, including high blood pressure, high cholesterol,
+smoking, and diabetes, further reduces the predicted risk. Female sex
+and higher income also contribute modestly toward lowering the
+prediction.
+
+These local explanations demonstrate how the XGBoost model integrates
+multiple predictors to generate individual-level predictions. High
+predicted risk emerges when several clinical risk factors accumulate
+simultaneously, whereas low predicted risk arises from the combination
+of younger age, good health status, and the absence of cardiometabolic
+conditions.
+
+### 7.5.5 SHAP Interaction Analysis
+
+To further investigate whether the model captures complex relationships
+between predictors, SHAP interaction values are computed for the XGBoost
+model. While standard SHAP values quantify the independent contribution
+of each feature to the prediction, SHAP interaction values decompose
+these effects into pairwise feature interactions.
+
+This allows the model output to be examined in terms of how two
+variables jointly influence predictions rather than assuming purely
+additive effects. Such interactions are particularly relevant for the
+research question, which investigates whether socioeconomic determinants
+such as income and education modify the impact of clinical risk factors
+on heart disease prevalence.
+
+By computing SHAP interaction values, it becomes possible to identify
+which pairs of variables most strongly interact within the model and to
+determine whether socioeconomic variables meaningfully alter the
+contribution of key clinical predictors. This provides a more detailed
+understanding of whether the non-linear modelling approach captures
+interaction effects beyond traditional additive assumptions.
 
 ```{r}
-shp_i_flipped <- shapviz(-shp_i$S, X = shp_i$X, baseline = -shp_i$baseline)
+#| label: shap-interaction
+if (!file.exists("shp_i.rds")) {
+  shp_i <- shapviz(xgb_engine, X_pred = X_sample, interactions = TRUE)
+  write_rds(shp_i, "shp_i.rds")
+} else {
+  shp_i <- read_rds("shp_i.rds")
+}
 ```
+
+#### SHAP Pairwise Interactions
+
+The SHAP interaction plot summarises the strength of pairwise
+interactions between predictors in the XGBoost model. Interaction
+strength reflects how much two variables jointly influence predictions
+beyond their individual contributions.
+
+This visualisation helps identify whether important predictors operate
+largely independently or whether meaningful interaction effects are
+present. In the context of this research question, the interaction
+matrix is used to assess whether socioeconomic variables such as income
+and education meaningfully interact with clinical risk factors in
+shaping predicted heart disease risk.
 
 ```{r}
+#| fig-height: 12
+#| fig-width: 16
+#| dev: png
 
-sv_interaction(shp_i_flipped) +
-  labs(title = "SHAP Interaction Values",
-       subtitle = "Pairwise feature interaction strengths")
-
-sv_dependence(shp_i_flipped, v = "HighBP_High", color_var = "Income", interactions = TRUE) +
-  labs(title = "HighBP × Income Interaction")
-
-sv_dependence(shp_i_flipped, v = "HighChol_High", color_var = "Income", interactions = TRUE) +
-  labs(title = "HighChol × Income Interaction")
-
-sv_dependence(shp_i_flipped, v = "GenHlth", color_var = "Income", interactions = TRUE) +
-  labs(title = "GenHlth × Income Interaction")
-
-sv_dependence(shp_i_flipped, v = "HighBP_High", color_var = "Education", interactions = TRUE) +
-  labs(title = "HighBP × Education Interaction")
-
-sv_dependence(shp_i_flipped, v = "GenHlth", color_var = "Education", interactions = TRUE) +
-  labs(title = "GenHlth × Education Interaction")
+sv_interaction(shp_i) +
+  labs(title = "SHAP Pairwise Interaction Strengths") 
 ```
 
+The SHAP interaction plot highlights the strength and direction of
+pairwise interactions between key predictors in the XGBoost model. Each
+panel shows how the contribution of one feature varies depending on the
+value of another feature, allowing interaction effects to be examined
+beyond simple additive relationships.
 
+The strongest patterns are observed for age and general health, which
+display wide spreads of SHAP values across several panels. This
+indicates that these variables not only have strong independent effects
+but also interact with multiple other predictors when determining heart
+disease risk. In particular, the interaction between age and general
+health shows substantial variation, suggesting that the effect of
+worsening health status becomes more pronounced among older individuals.
 
+Interactions involving clinical risk factors such as high blood pressure
+and high cholesterol are present but appear more limited in magnitude.
+Their effects are largely consistent across other predictors, indicating
+that these variables contribute relatively stable increases in predicted
+risk rather than strongly interacting with other features.
 
+Demographic and behavioural variables, including sex, smoking, and
+difficulty walking, show smaller interaction spreads. These predictors
+appear to contribute modest adjustments to risk but do not display
+strong pairwise interaction patterns with the primary clinical
+variables.
 
+Overall, the interaction matrix suggests that the XGBoost model captures
+some non-additive relationships, particularly involving age and general
+health. However, most other predictors exhibit relatively weak
+interaction effects, indicating that much of the model’s predictive
+signal is still driven by the direct contributions of key clinical and
+demographic variables rather than strong pairwise interactions.
 
+### 7.5.6 SHAP Interaction Dependence
 
+These SHAP interaction dependence plots are used to explore whether the
+contribution of key clinical risk factors to predicted heart disease
+risk varies across socioeconomic groups. By visualising interaction SHAP
+values while colouring observations by socioeconomic variables, the
+plots allow potential moderation effects to be examined.
 
+Unlike standard dependence plots, interaction SHAP values isolate the
+portion of a feature’s effect that arises specifically from interactions
+with other predictors. This enables the identification of non-additive
+relationships within the model and helps assess whether socioeconomic
+determinants modify the influence of clinical risk factors on predicted
+heart disease risk.
 
+#### Income Moderation
 
+```{r}
+#| fig-height: 9
+#| fig-width: 16
+#| dev: png
 
+p1 <- sv_dependence(
+  shp_i,
+  v = "HighBP_High",
+  color_var = "Income",
+  interactions = TRUE) +
+  labs(
+    title = "HighBP × Income",
+    x = "HighBP",
+    y = "Interaction SHAP Value")
 
+p2 <- sv_dependence(
+  shp_i,
+  v = "HighChol_High",
+  color_var = "Income",
+  interactions = TRUE) +
+  labs(
+    title = "HighChol × Income",
+    x = "HighChol",
+    y = "Interaction SHAP Value")
 
+p3 <- sv_dependence(
+  shp_i,
+  v = "GenHlth",
+  color_var = "Income",
+  interactions = TRUE) +
+  labs(
+    title = "GenHlth × Income",
+    x = "General Health",
+    y = "Interaction SHAP Value")
 
+p4 <- sv_dependence(
+  shp_i,
+  v = "BMI",
+  color_var = "Income",
+  interactions = TRUE) +
+  labs(
+    title = "BMI × Income",
+    x = "BMI",
+    y = "Interaction SHAP Value")
 
+(p1 + p2) / (p3 + p4) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
 
+The interaction dependence plots illustrate how the contribution of key
+clinical risk factors to predicted heart disease risk varies across
+income levels when interaction effects are explicitly isolated.
 
+For high blood pressure, interaction SHAP values remain tightly
+clustered around zero for both categories of the variable. Although the
+presence of high blood pressure increases predicted risk overall, the
+interaction component with income appears minimal, indicating that
+income does not substantially alter the effect of this condition in the
+model.
 
+A similar pattern is observed for high cholesterol. The interaction
+values show limited spread and remain close to zero across income
+levels, suggesting that the influence of high cholesterol on heart
+disease risk is largely independent of income.
 
+General health displays slightly greater variation in interaction SHAP
+values, particularly for poorer health categories. However, while income
+levels are distributed across the observations, there is no strong or
+systematic separation by income group. This suggests that worsening
+health increases predicted risk consistently across income levels rather
+than being strongly moderated by socioeconomic status.
 
+The BMI interaction plot shows very small interaction values across the
+majority of observations, indicating that BMI contributes little through
+interaction effects with income. Most points remain close to zero,
+suggesting that any influence of BMI on predicted risk operates largely
+through its direct effect rather than through socioeconomic moderation.
 
+Overall, the interaction SHAP values indicate that while the XGBoost
+model captures complex non-linear relationships, the interaction between
+income and these clinical risk factors is relatively weak. The primary
+contribution to predicted heart disease risk therefore appears to come
+from the direct effects of the clinical variables themselves rather than
+strong socioeconomic interaction effects.
 
+```{r}
+#| fig-height: 9
+#| fig-width: 16
+#| dev: png
+p5 <- sv_dependence(
+  shp_i,
+  v = "HighBP_High",
+  color_var = "Education",
+  interactions = TRUE) +
+  labs(
+    title = "HighBP × Education",
+    x = "HighBP",
+    y = "Interaction SHAP Value")
 
+p6 <- sv_dependence(
+  shp_i,
+  v = "HighChol_High",
+  color_var = "Education",
+  interactions = TRUE) +
+  labs(
+    title = "HighChol × Education",
+    x = "HighChol",
+    y = "Interaction SHAP Value")
 
+p7 <- sv_dependence(
+  shp_i,
+  v = "GenHlth",
+  color_var = "Education",
+  interactions = TRUE) +
+  labs(
+    title = "GenHlth × Education",
+    x = "General Health",
+    y = "Interaction SHAP Value"
+  )
 
+p8 <- sv_dependence(
+  shp_i,
+  v = "BMI",
+  color_var = "Education",
+  interactions = TRUE) +
+  labs(
+    title = "BMI × Education",
+    x = "BMI",
+    y = "Interaction SHAP Value")
 
+(p5 + p6) / (p7 + p8) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
 
+The education-based interaction plots show patterns very similar to
+those observed for income. For high blood pressure and high cholesterol,
+interaction SHAP values remain tightly clustered around zero regardless
+of educational level. This indicates that although these clinical
+conditions strongly influence predicted heart disease risk, their
+interaction with education contributes very little additional effect
+within the model.
+
+General health again displays slightly more variation in interaction
+SHAP values across categories. However, the spread remains relatively
+small and educational levels are distributed across each health category
+without clear separation. This suggests that worsening self-reported
+health increases predicted risk consistently across educational groups
+rather than being strongly moderated by education.
+
+For BMI, interaction SHAP values are effectively zero for nearly all
+observations. This indicates that BMI contributes almost no interaction
+effect with education in the model, and its influence on predictions is
+primarily through its direct effect rather than through socioeconomic
+modification.
+
+Overall, the interaction dependence plots provide little evidence that
+educational attainment strongly moderates the relationship between these
+clinical risk factors and predicted heart disease risk. Consistent with
+the income-based analysis, the dominant signal in the model arises from
+the direct effects of the clinical predictors rather than strong
+interaction effects with socioeconomic variables.
+
+7.5.7 Summary of SHAP Analysis
+
+The SHAP analysis provides a comprehensive interpretation of how the
+XGBoost model generates predictions at both global and local levels.
+Global feature importance and beeswarm visualisations show that the
+model’s predictions are primarily driven by clinical and health-related
+variables, particularly age, general health status, high blood pressure,
+and high cholesterol. These predictors consistently exert the largest
+influence on predicted heart disease risk across the dataset.
+
+Dependence plots further illustrate the direction and structure of these
+relationships, demonstrating clear increases in predicted risk for
+worsening health indicators and the presence of cardiometabolic
+conditions. Socioeconomic variables such as income and education
+contribute comparatively smaller direct effects, suggesting that
+clinical risk factors remain the dominant predictors of heart disease
+prevalence in the model.
+
+Interaction analyses were conducted to assess whether socioeconomic
+determinants moderate the influence of clinical predictors. Both
+pairwise interaction strength visualisations and interaction dependence
+plots indicate that most interactions between socioeconomic variables
+and clinical risk factors are relatively weak. While the XGBoost model
+is capable of capturing non-linear and interaction effects, the results
+suggest that the primary predictive signal arises from the independent
+contributions of the clinical variables rather than strong socioeconomic
+moderation effects.
+
+Finally, local SHAP explanations demonstrate how individual predictions
+are formed through the accumulation of multiple risk factors. High
+predicted risk emerges when several adverse health conditions occur
+simultaneously, whereas low predicted risk is associated with younger
+age, better general health, and the absence of key cardiometabolic
+conditions.
+
+With respect to the research question, the SHAP interaction analyses
+were used to investigate whether socioeconomic determinants,
+specifically income and education, moderate the impact of these clinical
+risk factors. Both the interaction strength visualisation and the
+interaction dependence plots show that most interactions between
+socioeconomic variables and clinical predictors are relatively small.
+The contribution of major risk factors such as high blood pressure, high
+cholesterol, and general health appears largely consistent across
+different socioeconomic groups.
+
+This suggests that although the XGBoost model is capable of capturing
+complex feature interactions, the predictive signal is dominated by the
+direct effects of clinical risk factors rather than strong moderation by
+income or education. Socioeconomic variables still contribute to
+predictions, but their role appears to be secondary compared with
+physiological and health-status indicators.
+
+Overall, the results indicate that complex machine learning models can
+detect interaction structures within the data, but in this case the
+moderation effect of socioeconomic determinants on the relationship
+between clinical risk factors and heart disease prevalence appears
+limited. Consequently, the predictive insights provided by the model
+primarily reinforce the importance of established clinical risk factors
+rather than revealing strong socioeconomic interaction effects.
+
+## 7.6 Conclusions: Discussion and Limitations
+
+This section addressed the second research question by investigating
+whether complex machine learning models can capture interactions between
+socioeconomic determinants and clinical risk factors when predicting
+heart disease prevalence. To do this, a modelling framework was
+implemented using the tidymodels ecosystem, comparing a regularized
+logistic regression model with a tuned XGBoost model. Logistic
+regression was included as a baseline representing traditional additive
+modelling assumptions, while XGBoost was used to capture potential
+non-linear relationships and interaction effects within the data.
+
+Models were trained using cross-validated tuning and evaluated on a
+held-out test set using metrics appropriate for imbalanced
+classification, including ROC–AUC, PR–AUC, F1-score, sensitivity, and
+specificity. The final evaluation demonstrated that the tuned XGBoost
+model substantially outperformed logistic regression in terms of
+discrimination and overall predictive performance. Logistic regression
+effectively collapsed to predicting the majority class, highlighting the
+limitations of a simple additive framework for this prediction task.
+
+To interpret the behaviour of the XGBoost model, SHAP-based
+explainability techniques were applied. Global importance and beeswarm
+plots showed that predictions were primarily driven by clinical and
+health-related predictors such as age, general health status, high blood
+pressure, and high cholesterol. Dependence plots confirmed clear
+monotonic relationships between worsening health indicators and
+increasing predicted heart disease risk.
+
+A central aim of this section was to evaluate whether socioeconomic
+determinants, specifically income and education, moderate the impact of
+these clinical risk factors. SHAP interaction analyses were therefore
+conducted to isolate pairwise feature interactions. The results
+indicated that although the XGBoost model is capable of capturing
+non-linear and interaction effects, the moderation of clinical risk
+factors by income and education appears relatively limited. Interaction
+SHAP values for combinations such as high blood pressure × income, high
+cholesterol × income, and general health × education remained small
+compared with the direct effects of the clinical variables themselves.
+
+These findings suggest that, within this dataset, the prevalence of
+heart disease is primarily associated with established clinical risk
+factors rather than strong socioeconomic moderation of those factors.
+While socioeconomic variables contribute to the predictive model, their
+influence appears secondary compared with physiological and
+health-status indicators. Consequently, the use of a flexible machine
+learning model provided improved predictive performance and
+interpretability, but did not reveal strong interaction structures
+between socioeconomic and clinical predictors.
+
+Several limitations should be considered when interpreting these
+results. First, the analysis relies on self-reported survey data, which
+may contain measurement error or reporting bias. Second, the variables
+used to represent socioeconomic status are relatively coarse indicators,
+which may limit the ability to detect nuanced socioeconomic
+interactions. Third, the dataset is cross-sectional, meaning causal
+relationships cannot be inferred from the observed associations.
+Finally, although SHAP provides powerful interpretability tools, the
+explanations remain dependent on the structure of the fitted model and
+should be interpreted as model-based insights rather than definitive
+causal effects.
+
+Overall, this section demonstrates that machine learning models such as
+XGBoost can provide improved predictive performance and detailed
+interpretability through explainable AI techniques. However, in the
+context of this dataset, the dominant determinants of predicted heart
+disease risk remain clinical health indicators, with socioeconomic
+moderation effects appearing relatively modest.
