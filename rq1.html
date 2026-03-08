@@ -1,0 +1,1590 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.27">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>rq1</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="rq1_files/libs/clipboard/clipboard.min.js"></script>
+<script src="rq1_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="rq1_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="rq1_files/libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="rq1_files/libs/quarto-html/popper.min.js"></script>
+<script src="rq1_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="rq1_files/libs/quarto-html/anchor.min.js"></script>
+<link href="rq1_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="rq1_files/libs/quarto-html/quarto-syntax-highlighting-ed96de9b727972fe78a7b5d16c58bf87.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="rq1_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="rq1_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="rq1_files/libs/bootstrap/bootstrap-9e3ffae467580fdb927a41352e75a2e0.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="fullcontent quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+
+
+
+<section id="multidomain-determinants-and-prediction-of-diabetes-status" class="level1">
+<h1>6. Multidomain Determinants and Prediction of Diabetes Status</h1>
+<section id="modelling-objective" class="level2">
+<h2 class="anchored" data-anchor-id="modelling-objective">6.1 Modelling Objective</h2>
+<p>This section addresses the following research question:</p>
+<blockquote class="blockquote">
+<p><strong><em>To what extent can diabetes status be explained and predicted using demographic, socioeconomic, behavioural, and cardiometabolic factors, and which predictors contribute most strongly to distinguishing between no diabetes, prediabetes, and diabetes?</em></strong></p>
+</blockquote>
+<p>The objective is twofold:</p>
+<ol type="1">
+<li><p><strong>Explanatory</strong> – to estimate the adjusted associations between predictor domains and diabetes status.</p></li>
+<li><p><strong>Predictive</strong> – to compare the classification performance of statistical and machine learning models.</p></li>
+</ol>
+<p>Diabetes status is treated as a <strong>multiclass outcome</strong> (No diabetes / Prediabetes / Diabetes), requiring modelling approaches suitable for nominal categorical outcomes.</p>
+</section>
+<section id="outcome-variable" class="level2">
+<h2 class="anchored" data-anchor-id="outcome-variable">6.2. Outcome Variable</h2>
+<p>The dependent variable is <strong>diabetes status</strong>, categorised into:</p>
+<ul>
+<li><p><strong>No diabetes</strong></p></li>
+<li><p><strong>Prediabetes</strong></p></li>
+<li><p><strong>Diabetes.</strong></p></li>
+</ul>
+<p>Exploratory analysis demonstrated class imbalance, with the majority of respondents in the no-diabetes category and substantially smaller proportions in the prediabetes and diabetes groups. This imbalance is accounted for in model training and evaluation.</p>
+</section>
+<section id="training-and-validation" class="level2">
+<h2 class="anchored" data-anchor-id="training-and-validation">6.3 Training and Validation</h2>
+<section id="data-partitioning-and-resampling" class="level3">
+<h3 class="anchored" data-anchor-id="data-partitioning-and-resampling">6.3.1 <strong>Data Partitioning and Resampling:</strong></h3>
+<p>The dataset is partitioned into a 75% training set and a 25% testing set using stratified sampling on diabetes status, ensuring class proportions are preserved across both splits. The raw training set reflects the population-level imbalance of 84.2% No diabetes, 13.9% Diabetes, and 1.8% Prediabetes, a distribution too skewed for stable multiclass learning without intervention.</p>
+<p>Prior to cross-validation, a hybrid resampling strategy is applied directly to the training set. No diabetes is downsampled to 68,949 real observations, Diabetes is retained in full (26,519 cases) as the anchor class, and Prediabetes is modestly augmented via SMOTE (over_ratio = 0.1), doubling real cases from 3,485 to 6,894 with approximately 50% synthetic observations. The resulting distribution of 67/26/7 approximates the 65/25/10 target while remaining grounded in observed data. Downsampling uses only real observations to preserve majority-class signal integrity, Diabetes is kept in full to avoid discarding clinically important cases, and SMOTE is limited to a doubling ratio to prevent the model learning predominantly from synthetic profiles. No diabetes intentionally remains the dominant class, reflecting real-world prevalence, while the two minority classes receive sufficient representation for stable parameter estimation.</p>
+<p>Five-fold stratified cross-validation is applied to the resampled training set, maintaining class proportions within each fold, and the held-out test set remains untouched throughout development for final evaluation only.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>class_counts <span class="ot">&lt;-</span> diab <span class="sc">|&gt;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count</span>(Diabetes) <span class="sc">|&gt;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">weight =</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n <span class="sc">/</span> <span class="fu">sum</span>(n)))</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>diab <span class="ot">&lt;-</span> diab <span class="sc">|&gt;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">left_join</span>(class_counts <span class="sc">|&gt;</span> <span class="fu">select</span>(Diabetes, weight), <span class="at">by =</span> <span class="st">"Diabetes"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">weight =</span> <span class="fu">importance_weights</span>(weight)) </span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">42</span>)</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>diabetes_split <span class="ot">&lt;-</span> <span class="fu">initial_split</span>(</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  diab,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">prop =</span> <span class="fl">0.75</span>,</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">strata =</span> Diabetes</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>diab_train <span class="ot">&lt;-</span> <span class="fu">training</span>(diabetes_split)</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>diab_test  <span class="ot">&lt;-</span> <span class="fu">testing</span>(diabetes_split)</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Sanity checks</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>diab_train <span class="sc">|&gt;</span>  <span class="fu">count</span>(Diabetes) <span class="sc">|&gt;</span> <span class="fu">mutate</span>(<span class="at">prop =</span> n<span class="sc">/</span><span class="fu">sum</span>(n))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div class="kable-table">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">Diabetes</th>
+<th style="text-align: right;">n</th>
+<th style="text-align: right;">prop</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">No diabetes</td>
+<td style="text-align: right;">160255</td>
+<td style="text-align: right;">0.8422992</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Prediabetes</td>
+<td style="text-align: right;">3485</td>
+<td style="text-align: right;">0.0183171</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Diabetes</td>
+<td style="text-align: right;">26519</td>
+<td style="text-align: right;">0.1393837</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>diab_test <span class="sc">|&gt;</span> <span class="fu">count</span>(Diabetes) <span class="sc">|&gt;</span>  <span class="fu">mutate</span>(<span class="at">prop =</span> n<span class="sc">/</span><span class="fu">sum</span>(n))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div class="kable-table">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">Diabetes</th>
+<th style="text-align: right;">n</th>
+<th style="text-align: right;">prop</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">No diabetes</td>
+<td style="text-align: right;">53448</td>
+<td style="text-align: right;">0.8427492</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Prediabetes</td>
+<td style="text-align: right;">1146</td>
+<td style="text-align: right;">0.0180697</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Diabetes</td>
+<td style="text-align: right;">8827</td>
+<td style="text-align: right;">0.1391810</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">42</span>)</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>diabetes_folds <span class="ot">&lt;-</span> <span class="fu">vfold_cv</span>(</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  diab_train,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">v =</span> <span class="dv">5</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">strata =</span> Diabetes</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="recipe-definition-and-preprocessing-strategy" class="level3">
+<h3 class="anchored" data-anchor-id="recipe-definition-and-preprocessing-strategy"><strong>6.3.2 Recipe Definition and Preprocessing Strategy</strong></h3>
+<p>The preprocessing recipe is defined using the tidymodels <code>recipes</code> framework and applied consistently across all candidate models. The following steps are applied in sequence:</p>
+<ul>
+<li><p><strong>Outcome specification</strong> — Models <code>Diabetes</code> as a three-level categorical outcome (No diabetes, Prediabetes, Diabetes).</p></li>
+<li><p><strong>Near-zero variance removal</strong> — Removes predictors with minimal variability across observations to prevent numerical instability and eliminate redundant features that contribute no discriminative information.</p></li>
+<li><p><strong>Ordinal scoring</strong> — Converts ordered factors (<code>Age</code>, <code>Education</code>, <code>Income</code>, <code>GenHlth</code>) into integer scores preserving their natural ranking. This introduces an assumption of approximately equal spacing between adjacent categories; however, the primary objective is to retain monotonic structure in a computationally efficient representation compatible with both parametric and tree-based models.</p></li>
+<li><p><strong>Dummy encoding</strong> — Transforms remaining nominal predictors into binary indicator variables. This step is necessary for models that cannot natively handle categorical inputs.</p></li>
+<li><p><strong>Global normalisation</strong> — Standardises all numeric predictors to mean = 0, sd = 1. Unlike the previous specification which normalised only BMI, MentHlth, and PhysHlth, normalisation is applied globally here to accommodate the full candidate model set. SVM and MLP are sensitive to feature scale and require all inputs to be on a comparable range; tree-based models are scale-invariant but are unaffected by this step.</p></li>
+<li><p><strong>SMOTE augmentation</strong> — Applied within the recipe with <code>over_ratio = 0.1</code>, operating on the already-downsampled training data. At this ratio, SMOTE generates synthetic Prediabetes cases by interpolating between existing minority-class nearest neighbours until the class reaches approximately 10% of the majority class count. Because downsampling has already reduced the No diabetes footprint prior to this step, synthetic generation occurs in a feature space with a more balanced neighbourhood structure, reducing the risk of interpolating across majority-class regions.</p></li>
+<li><p><strong>Case weights</strong> — Inverse square root frequency weights are assigned to each observation based on class membership and incorporated into the recipe via . Weights of approximately 1.09, 2.68, and 7.39 are assigned to No diabetes, Diabetes, and Prediabetes respectively, upweighting minority class observations during parameter estimation without generating additional synthetic data. This complements the resampling strategy by penalising misclassification of rare classes during training, particularly Prediabetes.</p></li>
+</ul>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">42</span>)</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>rec_rq1 <span class="ot">&lt;-</span> <span class="fu">recipe</span>(Diabetes <span class="sc">~</span> ., <span class="at">data =</span> diab_train) <span class="sc">|&gt;</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">step_nzv</span>(<span class="fu">all_predictors</span>()) <span class="sc">|&gt;</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">step_ordinalscore</span>(Age, Education, Income, GenHlth) <span class="sc">|&gt;</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">step_dummy</span>(<span class="fu">all_nominal_predictors</span>()) <span class="sc">|&gt;</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">step_normalize</span>(<span class="fu">all_numeric_predictors</span>()) <span class="sc">|&gt;</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">step_downsample</span>(Diabetes, <span class="at">under_ratio  =</span> <span class="dv">20</span> , <span class="at">seed =</span> <span class="dv">42</span>) <span class="sc">|&gt;</span> </span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">step_smote</span>(Diabetes, <span class="at">over_ratio =</span> <span class="fl">0.1</span>, <span class="at">seed =</span> <span class="dv">42</span>)</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(rec_rq1)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>rec_rq1 <span class="sc">|&gt;</span> </span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">prep</span>() <span class="sc">|&gt;</span> </span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">bake</span>(<span class="at">new_data =</span> <span class="cn">NULL</span>) <span class="sc">|&gt;</span> </span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count</span>(Diabetes)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div class="kable-table">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">Diabetes</th>
+<th style="text-align: right;">n</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">No diabetes</td>
+<td style="text-align: right;">69700</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Prediabetes</td>
+<td style="text-align: right;">6970</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Diabetes</td>
+<td style="text-align: right;">26519</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</section>
+<section id="model-specification" class="level3">
+<h3 class="anchored" data-anchor-id="model-specification">6.3.3 Model Specification</h3>
+<p>We now define the candidate models for RQ1 using the <strong>tidymodels</strong> framework. Each model is specified independently of preprocessing and will later be combined with the common recipe using <strong>workflows</strong> and <strong>workflow sets</strong>.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Model</th>
+<th>Type</th>
+<th>Primary Function</th>
+<th>Key Strengths</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Multinomial Logistic Regression</strong></td>
+<td>Parametric</td>
+<td>Linear Baseline</td>
+<td>Interpretable log-odds; direct coefficient analysis</td>
+</tr>
+<tr class="even">
+<td><strong>Regularised Multinomial (glmnet)</strong></td>
+<td>Parametric (Penalised)</td>
+<td>Regularisation Path</td>
+<td>Elastic net penalty shrinks redundant predictors; covers ridge, lasso and elastic net via <code>mixture</code> tuning</td>
+</tr>
+<tr class="odd">
+<td><strong>Random Forest</strong></td>
+<td>Ensemble (Bagging)</td>
+<td>Non-linear Discovery</td>
+<td>Captures complex interactions; robust to multicollinearity</td>
+</tr>
+<tr class="even">
+<td><strong>XGBoost</strong></td>
+<td>Ensemble (Boosting)</td>
+<td>Predictive Performance</td>
+<td>High efficiency on tabular data; optimised for accuracy</td>
+</tr>
+<tr class="odd">
+<td><strong>MLP</strong></td>
+<td>Neural Network</td>
+<td>Non-linear Representation</td>
+<td>Learns complex feature interactions via hidden layers; gradient-based optimisation</td>
+</tr>
+</tbody>
+</table>
+<p>Hyperparameters marked <code>tune()</code> will be optimised via <code>tune_race_anova</code> during cross-validation, with custom space-filling grids specified for RF, XGBoost, MLP and glmnet. Multinomial logistic regression requires no tuning and serves as the unpenalised parametric baseline against which the regularised variant can be directly compared.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Multinomial logistic regression</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>mod_multinom <span class="ot">&lt;-</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">multinom_reg</span>() <span class="sc">|&gt;</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_engine</span>(<span class="st">"nnet"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_mode</span>(<span class="st">"classification"</span>)</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Regularised Multinomial (glmnet)</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>mod_glmnet <span class="ot">&lt;-</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">multinom_reg</span>(</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">penalty =</span> <span class="fu">tune</span>(),</span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">mixture =</span> <span class="fu">tune</span>()) <span class="sc">|&gt;</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_engine</span>(<span class="st">"glmnet"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_mode</span>(<span class="st">"classification"</span>)</span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Random Forest</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a>mod_rf <span class="ot">&lt;-</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rand_forest</span>(</span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">trees =</span> <span class="dv">512</span>,</span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">mtry  =</span> <span class="fu">tune</span>(),</span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">min_n =</span> <span class="fu">tune</span>()) <span class="sc">|&gt;</span></span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_engine</span>(<span class="st">"ranger"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_mode</span>(<span class="st">"classification"</span>)</span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a><span class="co"># XGBoost</span></span>
+<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a>mod_xgb <span class="ot">&lt;-</span></span>
+<span id="cb7-26"><a href="#cb7-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">boost_tree</span>(</span>
+<span id="cb7-27"><a href="#cb7-27" aria-hidden="true" tabindex="-1"></a>    <span class="at">trees =</span> <span class="dv">1024</span>,</span>
+<span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a>    <span class="at">tree_depth =</span> <span class="fu">tune</span>(),</span>
+<span id="cb7-29"><a href="#cb7-29" aria-hidden="true" tabindex="-1"></a>    <span class="at">learn_rate =</span> <span class="fu">tune</span>(),</span>
+<span id="cb7-30"><a href="#cb7-30" aria-hidden="true" tabindex="-1"></a>    <span class="at">loss_reduction =</span> <span class="fu">tune</span>(),</span>
+<span id="cb7-31"><a href="#cb7-31" aria-hidden="true" tabindex="-1"></a>    <span class="at">sample_size =</span> <span class="fu">tune</span>(),</span>
+<span id="cb7-32"><a href="#cb7-32" aria-hidden="true" tabindex="-1"></a>    <span class="at">mtry  =</span> <span class="fu">tune</span>(),</span>
+<span id="cb7-33"><a href="#cb7-33" aria-hidden="true" tabindex="-1"></a>    <span class="at">min_n =</span> <span class="fu">tune</span>()) <span class="sc">|&gt;</span></span>
+<span id="cb7-34"><a href="#cb7-34" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_engine</span>(<span class="st">"xgboost"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb7-35"><a href="#cb7-35" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_mode</span>(<span class="st">"classification"</span>)</span>
+<span id="cb7-36"><a href="#cb7-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-37"><a href="#cb7-37" aria-hidden="true" tabindex="-1"></a><span class="co"># MLP</span></span>
+<span id="cb7-38"><a href="#cb7-38" aria-hidden="true" tabindex="-1"></a>mod_mlp <span class="ot">&lt;-</span></span>
+<span id="cb7-39"><a href="#cb7-39" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mlp</span>(</span>
+<span id="cb7-40"><a href="#cb7-40" aria-hidden="true" tabindex="-1"></a>    <span class="at">hidden_units =</span> <span class="fu">tune</span>(),</span>
+<span id="cb7-41"><a href="#cb7-41" aria-hidden="true" tabindex="-1"></a>    <span class="at">penalty =</span> <span class="fu">tune</span>(),</span>
+<span id="cb7-42"><a href="#cb7-42" aria-hidden="true" tabindex="-1"></a>    <span class="at">epochs  =</span> <span class="fu">tune</span>()) <span class="sc">|&gt;</span></span>
+<span id="cb7-43"><a href="#cb7-43" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_engine</span>(<span class="st">"nnet"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb7-44"><a href="#cb7-44" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_mode</span>(<span class="st">"classification"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="workflow-set-construction" class="level3">
+<h3 class="anchored" data-anchor-id="workflow-set-construction">6.3.4 Workflow Set Construction</h3>
+<p>We now integrate the RQ1 preprocessing recipe with all five candidate model specifications. Each workflow represents one model-preprocessing pair, and the workflow set enables parallel evaluation under identical resampling conditions. Custom tuning grids are attached via <code>option_add()</code> for MLP and RBF SVM, overriding the default space-filling design for those models with constrained parameter ranges appropriate to their respective architectures.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Workflow set </span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>wf_set_rq1 <span class="ot">&lt;-</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">workflow_set</span>(</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">preproc =</span> <span class="fu">list</span>(<span class="at">rq1_recipe =</span> rec_rq1),</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">models  =</span> <span class="fu">list</span>(</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>      <span class="at">multinom =</span> mod_multinom,</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>      <span class="at">glmnet =</span> mod_glmnet,</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>      <span class="at">rf  =</span> mod_rf,</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>      <span class="at">xgb =</span> mod_xgb,</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>      <span class="at">mlp =</span> mod_mlp))</span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">42</span>)</span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="co"># Tuning grids</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>grid_rf <span class="ot">&lt;-</span> <span class="fu">grid_space_filling</span>(</span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mtry</span>(<span class="at">range  =</span> <span class="fu">c</span>(<span class="dv">2</span>L, <span class="dv">15</span>L)),</span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">min_n</span>(<span class="at">range =</span> <span class="fu">c</span>(<span class="dv">5</span>L, <span class="dv">30</span>L)),</span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>  <span class="at">size =</span> <span class="dv">30</span>)</span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>grid_xgb <span class="ot">&lt;-</span> <span class="fu">grid_space_filling</span>(</span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tree_depth</span>(<span class="at">range =</span> <span class="fu">c</span>(<span class="dv">2</span>L, <span class="dv">8</span>L)),</span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">learn_rate</span>(<span class="at">range =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="fl">2.5</span>, <span class="sc">-</span><span class="dv">1</span>)),</span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">loss_reduction</span>(<span class="at">range =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">5</span>, <span class="dv">1</span>)),</span>
+<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a>  <span class="at">sample_size =</span> <span class="fu">sample_prop</span>(<span class="at">range =</span> <span class="fu">c</span>(<span class="fl">0.5</span>, <span class="fl">1.0</span>)),</span>
+<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mtry</span>(<span class="at">range =</span> <span class="fu">c</span>(<span class="dv">2</span>L, <span class="dv">15</span>L)),</span>
+<span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">min_n</span>(<span class="at">range =</span> <span class="fu">c</span>(<span class="dv">5</span>L, <span class="dv">25</span>L)),</span>
+<span id="cb8-27"><a href="#cb8-27" aria-hidden="true" tabindex="-1"></a>  <span class="at">size =</span> <span class="dv">50</span>)</span>
+<span id="cb8-28"><a href="#cb8-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-29"><a href="#cb8-29" aria-hidden="true" tabindex="-1"></a>grid_mlp <span class="ot">&lt;-</span> <span class="fu">grid_space_filling</span>(</span>
+<span id="cb8-30"><a href="#cb8-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">hidden_units</span>(<span class="at">range =</span> <span class="fu">c</span>(<span class="dv">32</span>L, <span class="dv">96</span>L)),</span>
+<span id="cb8-31"><a href="#cb8-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">penalty</span>(<span class="at">range =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">4</span>, <span class="sc">-</span><span class="dv">2</span>)),</span>
+<span id="cb8-32"><a href="#cb8-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">epochs</span>(<span class="at">range =</span> <span class="fu">c</span>(<span class="dv">100</span>L, <span class="dv">200</span>L)),</span>
+<span id="cb8-33"><a href="#cb8-33" aria-hidden="true" tabindex="-1"></a>  <span class="at">size =</span> <span class="dv">40</span>)</span>
+<span id="cb8-34"><a href="#cb8-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-35"><a href="#cb8-35" aria-hidden="true" tabindex="-1"></a>grid_glmnet <span class="ot">&lt;-</span> <span class="fu">grid_space_filling</span>(</span>
+<span id="cb8-36"><a href="#cb8-36" aria-hidden="true" tabindex="-1"></a>  <span class="fu">penalty</span>(<span class="at">range =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">4</span>, <span class="dv">0</span>)),</span>
+<span id="cb8-37"><a href="#cb8-37" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mixture</span>(<span class="at">range =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>)),</span>
+<span id="cb8-38"><a href="#cb8-38" aria-hidden="true" tabindex="-1"></a>  <span class="at">size =</span> <span class="dv">30</span>)</span>
+<span id="cb8-39"><a href="#cb8-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-40"><a href="#cb8-40" aria-hidden="true" tabindex="-1"></a>wf_set_rq1 <span class="ot">&lt;-</span></span>
+<span id="cb8-41"><a href="#cb8-41" aria-hidden="true" tabindex="-1"></a>  wf_set_rq1 <span class="sc">|&gt;</span> </span>
+<span id="cb8-42"><a href="#cb8-42" aria-hidden="true" tabindex="-1"></a>  <span class="fu">option_add</span>(<span class="at">id =</span> <span class="st">"rq1_recipe_glmnet"</span>, <span class="at">grid =</span> grid_glmnet) <span class="sc">|&gt;</span> </span>
+<span id="cb8-43"><a href="#cb8-43" aria-hidden="true" tabindex="-1"></a>  <span class="fu">option_add</span>(<span class="at">id =</span> <span class="st">"rq1_recipe_rf"</span>, <span class="at">grid =</span> grid_rf) <span class="sc">|&gt;</span></span>
+<span id="cb8-44"><a href="#cb8-44" aria-hidden="true" tabindex="-1"></a>  <span class="fu">option_add</span>(<span class="at">id =</span> <span class="st">"rq1_recipe_xgb"</span>, <span class="at">grid =</span> grid_xgb) <span class="sc">|&gt;</span></span>
+<span id="cb8-45"><a href="#cb8-45" aria-hidden="true" tabindex="-1"></a>  <span class="fu">option_add</span>(<span class="at">id =</span> <span class="st">"rq1_recipe_mlp"</span>, <span class="at">grid =</span> grid_mlp) </span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="hyperparameter-tuning" class="level3">
+<h3 class="anchored" data-anchor-id="hyperparameter-tuning">6.3.5 Hyperparameter Tuning</h3>
+<p><strong>Metrics computed</strong></p>
+<p>Model performance is evaluated using four complementary metrics selected to reflect both discrimination ability and calibration quality under residual class imbalance:</p>
+<ul>
+<li><p><strong>Multinomial log-loss</strong> — the primary tuning metric, measuring the calibration of predicted class probabilities across all three diabetes categories. Unlike threshold-dependent metrics, log-loss penalises overconfident incorrect predictions directly, making it the most informative criterion for probabilistic multiclass models and the metric used to drive early elimination in <code>tune_race_anova</code>.</p></li>
+<li><p><strong>ROC-AUC (multiclass)</strong> — measures discrimination ability across all possible classification thresholds using the one-vs-rest framework, providing a threshold-independent summary of how well each model separates the three classes.</p></li>
+<li><p><strong>Balanced accuracy</strong> — mean recall across classes, correcting for residual imbalance in the resampled training distribution. Retained as the primary communication metric given its interpretability to non-technical audiences.</p></li>
+<li><p><strong>Macro F1-score</strong> — harmonic mean of precision and recall averaged equally across all three classes, providing an imbalance-aware summary of classification performance as a supporting metric.</p></li>
+</ul>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>metrics_diab <span class="ot">&lt;-</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">metric_set</span>(</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    mn_log_loss,</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>    roc_auc,</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    bal_accuracy,</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    f_meas</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><strong>Hyperparameter Tuning Strategy</strong></p>
+<p>Hyperparameter optimisation is performed using <code>tune_race_anova</code>, which eliminates underperforming configurations early based on interim fold results, enabling efficient exploration of larger grid sizes without fitting all configurations to completion:</p>
+<ul>
+<li><p><strong>Grid size</strong> — 15 configurations per model, with space-filling designs via <code>grid_space_filling()</code> for MLP and RBF SVM to constrain the search to empirically sensible parameter regions. Multinomial logistic regression requires no tuning. The total maximum fit count is 5 models × 15 grids × 5 CV folds = 375 fits, reduced in practice by early elimination.</p></li>
+<li><p><strong>Search method</strong> — <code>tune_race_anova</code> uses ANOVA-based interim testing across folds to identify and discard configurations that are statistically unlikely to be competitive, substantially reducing computation relative to full grid search while retaining systematic coverage of the parameter space.</p></li>
+<li><p><strong>Tuning metric</strong> — multinomial log-loss serves as the primary optimisation metric, driving both configuration selection and early elimination decisions. Log-loss rewards well-calibrated probability estimates across all three classes rather than optimising threshold-dependent classification boundaries.</p></li>
+<li><p><strong>Cross-validation</strong> — 5-fold stratified CV applied to the resampled training set, maintaining the 67/26/7 class distribution within each fold to ensure consistent learning conditions across splits.</p></li>
+</ul>
+<p>The best hyperparameter configuration for each model is selected based on lowest mean multinomial log-loss across folds.</p>
+<p><strong>ANOVA Race Control Parameters</strong></p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>ctrl <span class="ot">&lt;-</span> <span class="fu">control_race</span>(</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">save_pred     =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">save_workflow =</span> <span class="cn">FALSE</span>,</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">verbose_elim  =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">verbose =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">burn_in =</span> <span class="dv">3</span>,</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">alpha =</span> <span class="fl">0.05</span>,</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">randomize =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">allow_par =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">extract =</span> <span class="cn">NULL</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>cl <span class="ot">&lt;-</span> <span class="fu">makePSOCKcluster</span>(<span class="dv">4</span>)</span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a><span class="fu">registerDoParallel</span>(cl)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co"># cat("Started:", format(Sys.time()), "\n")</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="co"># set.seed(42)</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="co"># wf_set_rq1_fit &lt;-</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="co">#   wf_set_rq1 |&gt;</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="co">#   workflow_map(</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="co">#     "tune_race_anova",</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="co">#     resamples = diabetes_folds,</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="co">#     metrics   = metrics_diab,</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a><span class="co">#     control   = ctrl</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a><span class="co">#   )</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a><span class="co"># </span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a><span class="co"># cat("Finished:", format(Sys.time()), "\n")</span></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a><span class="co"># stopCluster(cl)</span></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a><span class="co"># registerDoSEQ()</span></span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a><span class="co"># gc()</span></span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a><span class="co"># </span></span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a><span class="co"># write_rds(wf_set_rq1_fit, 'wf_set_rq1_fit.rds')</span></span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>wf_set_rq1_fit <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="st">'wf_set_rq1_fit.rds'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>model_labels <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  <span class="st">"rq1_recipe_glmnet"</span>  <span class="ot">=</span> <span class="st">"Elastic Net"</span>,</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  <span class="st">"rq1_recipe_mlp"</span> <span class="ot">=</span> <span class="st">"MLP"</span>,</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>  <span class="st">"rq1_recipe_multinom"</span> <span class="ot">=</span> <span class="st">"Multinomial Log Regression"</span>,</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>  <span class="st">"rq1_recipe_rf"</span> <span class="ot">=</span> <span class="st">"Random Forest"</span>,</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>  <span class="st">"rq1_recipe_xgb"</span> <span class="ot">=</span> <span class="st">"XGBoost"</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>m1 <span class="ot">&lt;-</span> <span class="fu">pretty_autoplot</span>(</span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>  wf_set_rq1_fit,</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>  <span class="st">"roc_auc"</span>,</span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>  <span class="st">"ROC–AUC (multiclass)"</span>,</span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>  <span class="st">"Discrimination (ROC–AUC)"</span>,</span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">labels =</span> model_labels)</span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a>m2 <span class="ot">&lt;-</span> <span class="fu">pretty_autoplot</span>(</span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>  wf_set_rq1_fit,</span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>  <span class="st">"bal_accuracy"</span>,</span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a>  <span class="st">"Balanced accuracy"</span>,</span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a>  <span class="st">"Class-balanced accuracy"</span>,</span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a>  <span class="at">labels =</span> model_labels)</span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a>m3 <span class="ot">&lt;-</span> <span class="fu">pretty_autoplot</span>(</span>
+<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a>  wf_set_rq1_fit,</span>
+<span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a>  <span class="st">"f_meas"</span>,</span>
+<span id="cb12-26"><a href="#cb12-26" aria-hidden="true" tabindex="-1"></a>  <span class="st">"Macro F1-score"</span>,</span>
+<span id="cb12-27"><a href="#cb12-27" aria-hidden="true" tabindex="-1"></a>  <span class="st">"Macro F1 (imbalance-aware)"</span>,</span>
+<span id="cb12-28"><a href="#cb12-28" aria-hidden="true" tabindex="-1"></a>  <span class="at">labels =</span> model_labels)</span>
+<span id="cb12-29"><a href="#cb12-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-30"><a href="#cb12-30" aria-hidden="true" tabindex="-1"></a>m4 <span class="ot">&lt;-</span> <span class="fu">pretty_autoplot</span>(</span>
+<span id="cb12-31"><a href="#cb12-31" aria-hidden="true" tabindex="-1"></a>  wf_set_rq1_fit,</span>
+<span id="cb12-32"><a href="#cb12-32" aria-hidden="true" tabindex="-1"></a>  <span class="st">"mn_log_loss"</span>,</span>
+<span id="cb12-33"><a href="#cb12-33" aria-hidden="true" tabindex="-1"></a>  <span class="st">"Multinomial log-loss"</span>,</span>
+<span id="cb12-34"><a href="#cb12-34" aria-hidden="true" tabindex="-1"></a>  <span class="st">"Calibration (log-loss)"</span>,</span>
+<span id="cb12-35"><a href="#cb12-35" aria-hidden="true" tabindex="-1"></a>  <span class="at">pct    =</span> <span class="cn">FALSE</span>,</span>
+<span id="cb12-36"><a href="#cb12-36" aria-hidden="true" tabindex="-1"></a>  <span class="at">labels =</span> model_labels)</span>
+<span id="cb12-37"><a href="#cb12-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-38"><a href="#cb12-38" aria-hidden="true" tabindex="-1"></a>(m1 <span class="sc">|</span> m2) <span class="sc">/</span> (m3 <span class="sc">|</span> m4) <span class="sc">+</span></span>
+<span id="cb12-39"><a href="#cb12-39" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot_layout</span>(<span class="at">guides =</span> <span class="st">"collect"</span>) <span class="sc">&amp;</span></span>
+<span id="cb12-40"><a href="#cb12-40" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="st">"bottom"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="rq1_files/figure-html/eval-results-1.svg" class="img-fluid figure-img" width="1536"></p>
+</figure>
+</div>
+</div>
+</div>
+<p><strong>ROC-AUC</strong> XGBoost achieves the single best discrimination score at approximately 71.2%, appearing as the top-ranked workflow. MLP configurations dominate ranks 2 through 9, clustered tightly between 70.4% and 70.8%, indicating consistently strong discriminative ability across hyperparameter configurations. Random Forest occupies the middle range, while Elastic Net and Multinomial configurations occupy the lower ranks, both performing comparably to each other at around 70.0–70.2%. Overall discrimination differences across models are modest, spanning less than 1.5 percentage points across all 28 workflows.</p>
+<p><strong>Balanced Accuracy</strong> The pattern closely mirrors ROC-AUC. XGBoost again achieves the single highest balanced accuracy at approximately 62.8%, with MLP configurations filling the top cluster. Random Forest sits in the middle, and both parametric models (Elastic Net and Multinomial) perform comparably in the lower range around 61.5–61.8%. The separation between MLP and the parametric models is more visible here than in ROC-AUC, suggesting MLP has a meaningful advantage in recovering minority class recall.</p>
+<p><strong>Macro F1</strong> The top ranks are shared between XGBoost, MLP, and Random Forest, all clustering tightly around 69.5–70.0%. Elastic Net and Multinomial follow closely behind at approximately 68.5–69.0%. Two MLP configurations at the bottom right show dramatically wider confidence intervals and substantially lower F1 scores, indicating failed convergence for those specific hyperparameter combinations, these are outliers attributable to training instability rather than model family weakness.</p>
+<p><strong>Calibration (Log-loss)</strong> This panel shows the starkest separation. XGBoost and Elastic Net achieve the best calibrated probability estimates, with the single best XGBoost configuration reaching approximately 0.570 and Elastic Net configurations clustered just above at 0.575–0.590. Multinomial follows closely, performing nearly identically to Elastic Net, confirming that regularisation adds minimal additional calibration benefit over the unpenalised baseline in this dataset. Random Forest sits slightly above at approximately 0.595. MLP configurations are clearly the worst calibrated by a large margin, clustered around 0.840, indicating that despite strong discrimination performance, MLP produces overconfident and poorly calibrated class probability estimates.</p>
+</section>
+<section id="extract-tuning-results" class="level3">
+<h3 class="anchored" data-anchor-id="extract-tuning-results">6.3.6 Extract tuning results</h3>
+<p>Cross-validation performance provides a useful guide for hyperparameter selection and relative model ranking, but it reflects the resampled training distribution rather than the population-level class structure present in the held-out test set. Final conclusions about model performance, calibration, and minority class recovery cannot be drawn until each model is evaluated on unseen data. The best configuration for each tuned model is therefore selected based on lowest mean multinomial log-loss across folds, finalized, and refitted on the full training set before evaluation on the held-out test set.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>rf_res  <span class="ot">&lt;-</span> <span class="fu">extract_workflow_set_result</span>(wf_set_rq1_fit, <span class="st">"rq1_recipe_rf"</span>)</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>xgb_res <span class="ot">&lt;-</span> <span class="fu">extract_workflow_set_result</span>(wf_set_rq1_fit, <span class="st">"rq1_recipe_xgb"</span>)</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>mlp_res <span class="ot">&lt;-</span> <span class="fu">extract_workflow_set_result</span>(wf_set_rq1_fit, <span class="st">"rq1_recipe_mlp"</span>)</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>glmnet_res  <span class="ot">&lt;-</span> <span class="fu">extract_workflow_set_result</span>(wf_set_rq1_fit, <span class="st">"rq1_recipe_glmnet"</span>)</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Note: multinomial has no tuning parameters, so no extraction needed</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Using mn_log_loss as the primary optimization metric </span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>best_rf <span class="ot">&lt;-</span> <span class="fu">select_best</span>(rf_res, <span class="at">metric =</span> <span class="st">"mn_log_loss"</span>)</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>best_xgb <span class="ot">&lt;-</span> <span class="fu">select_best</span>(xgb_res, <span class="at">metric =</span> <span class="st">"mn_log_loss"</span>)</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>best_mlp <span class="ot">&lt;-</span> <span class="fu">select_best</span>(mlp_res, <span class="at">metric =</span> <span class="st">"mn_log_loss"</span>)</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>best_glmnet <span class="ot">&lt;-</span> <span class="fu">select_best</span>(glmnet_res, <span class="at">metric =</span> <span class="st">"mn_log_loss"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="co"># These contain the recipe and model specification without fitted parameters</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>rf_wf      <span class="ot">&lt;-</span> <span class="fu">extract_workflow</span>(wf_set_rq1_fit, <span class="st">"rq1_recipe_rf"</span>)</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>xgb_wf     <span class="ot">&lt;-</span> <span class="fu">extract_workflow</span>(wf_set_rq1_fit, <span class="st">"rq1_recipe_xgb"</span>)</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>mlp_wf     <span class="ot">&lt;-</span> <span class="fu">extract_workflow</span>(wf_set_rq1_fit, <span class="st">"rq1_recipe_mlp"</span>)</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>glmnet_wf  <span class="ot">&lt;-</span> <span class="fu">extract_workflow</span>(wf_set_rq1_fit, <span class="st">"rq1_recipe_glmnet"</span>)</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>multinom_wf <span class="ot">&lt;-</span> <span class="fu">extract_workflow</span>(wf_set_rq1_fit, <span class="st">"rq1_recipe_multinom"</span>)</span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a><span class="co"># This creates finalized workflows ready for last-fit on full dataset</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>rf_final_wf <span class="ot">&lt;-</span> <span class="fu">finalize_workflow</span>(rf_wf, best_rf)</span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>xgb_final_wf  <span class="ot">&lt;-</span> <span class="fu">finalize_workflow</span>(xgb_wf, best_xgb)</span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>mlp_final_wf <span class="ot">&lt;-</span> <span class="fu">finalize_workflow</span>(mlp_wf, best_mlp)</span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a>glmnet_final_wf  <span class="ot">&lt;-</span> <span class="fu">finalize_workflow</span>(glmnet_wf, best_glmnet)</span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a><span class="co"># Multinomial has no tuning parameters, so original workflow is already finalized</span></span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a>multinom_final_wf <span class="ot">&lt;-</span> multinom_wf</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>glmnet_final_fit <span class="ot">&lt;-</span> </span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  glmnet_final_wf  <span class="sc">|&gt;</span> </span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">last_fit</span>(diabetes_split)</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>multinom_final_fit <span class="ot">&lt;-</span> </span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>  multinom_final_wf <span class="sc">|&gt;</span> </span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">last_fit</span>(diabetes_split)</span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>rf_final_fit  <span class="ot">&lt;-</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>  rf_final_wf  <span class="sc">|&gt;</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">last_fit</span>(diabetes_split)</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>xgb_final_fit <span class="ot">&lt;-</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>  xgb_final_wf <span class="sc">|&gt;</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">last_fit</span>(diabetes_split)</span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a>mlp_final_fit <span class="ot">&lt;-</span></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a>  mlp_final_wf <span class="sc">|&gt;</span></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">last_fit</span>(diabetes_split)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+</section>
+<section id="model-evaluation" class="level2">
+<h2 class="anchored" data-anchor-id="model-evaluation">6.4 Model Evaluation</h2>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>pred_rf <span class="ot">&lt;-</span> rf_final_fit <span class="sc">|&gt;</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_predictions</span>() <span class="sc">|&gt;</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">model =</span> <span class="st">"Random Forest"</span>)</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>pred_xgb  <span class="ot">&lt;-</span> xgb_final_fit <span class="sc">|&gt;</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_predictions</span>() <span class="sc">|&gt;</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">model =</span> <span class="st">"XGBoost"</span>)</span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>pred_mlp  <span class="ot">&lt;-</span> mlp_final_fit  <span class="sc">|&gt;</span></span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_predictions</span>() <span class="sc">|&gt;</span></span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">model =</span> <span class="st">"MLP"</span>)</span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>pred_glmnet <span class="ot">&lt;-</span> glmnet_final_fit <span class="sc">|&gt;</span></span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_predictions</span>() <span class="sc">|&gt;</span> </span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">model =</span> <span class="st">"Elastic Net"</span>)</span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a>pred_mn <span class="ot">&lt;-</span> multinom_final_fit <span class="sc">|&gt;</span> </span>
+<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_predictions</span>() <span class="sc">|&gt;</span></span>
+<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">model =</span> <span class="st">"Multinomial"</span>)</span>
+<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-21"><a href="#cb16-21" aria-hidden="true" tabindex="-1"></a>pred_all <span class="ot">&lt;-</span> <span class="fu">bind_rows</span>(pred_rf, pred_xgb, pred_mlp, pred_glmnet, pred_mn) <span class="sc">|&gt;</span></span>
+<span id="cb16-22"><a href="#cb16-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rename</span>(<span class="at">.pred_No_diabetes =</span> <span class="st">`</span><span class="at">.pred_No diabetes</span><span class="st">`</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>metrics_rf <span class="ot">&lt;-</span> rf_final_fit <span class="sc">|&gt;</span> </span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_metrics</span>() <span class="sc">|&gt;</span> </span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">model =</span> <span class="st">"Random Forest"</span>)</span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>metrics_xgb <span class="ot">&lt;-</span> xgb_final_fit <span class="sc">|&gt;</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_metrics</span>() <span class="sc">|&gt;</span> </span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">model =</span> <span class="st">"XGBoost"</span>)</span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a>metrics_mlp <span class="ot">&lt;-</span> mlp_final_fit <span class="sc">|&gt;</span> </span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_metrics</span>() <span class="sc">|&gt;</span> <span class="fu">mutate</span>(<span class="at">model =</span> <span class="st">"MLP"</span>)</span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a>metrics_glmnet <span class="ot">&lt;-</span> </span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>  glmnet_final_fit  <span class="sc">|&gt;</span> </span>
+<span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_metrics</span>() <span class="sc">|&gt;</span> </span>
+<span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">model =</span> <span class="st">"Elastic Net"</span>)</span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a>metrics_mn <span class="ot">&lt;-</span> </span>
+<span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a>  multinom_final_fit <span class="sc">|&gt;</span> </span>
+<span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_metrics</span>() <span class="sc">|&gt;</span> </span>
+<span id="cb17-19"><a href="#cb17-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">model =</span> <span class="st">"Multinomial"</span>)</span>
+<span id="cb17-20"><a href="#cb17-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-21"><a href="#cb17-21" aria-hidden="true" tabindex="-1"></a>metrics_all <span class="ot">&lt;-</span> </span>
+<span id="cb17-22"><a href="#cb17-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">bind_rows</span>(metrics_rf, metrics_xgb, metrics_mlp, metrics_glmnet, metrics_mn)</span>
+<span id="cb17-23"><a href="#cb17-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-24"><a href="#cb17-24" aria-hidden="true" tabindex="-1"></a>metrics_all <span class="sc">|&gt;</span></span>
+<span id="cb17-25"><a href="#cb17-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(model, .metric, .estimate) <span class="sc">|&gt;</span></span>
+<span id="cb17-26"><a href="#cb17-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_wider</span>(<span class="at">names_from =</span> .metric, <span class="at">values_from =</span> .estimate)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div class="kable-table">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">model</th>
+<th style="text-align: right;">accuracy</th>
+<th style="text-align: right;">roc_auc</th>
+<th style="text-align: right;">brier_class</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Random Forest</td>
+<td style="text-align: right;">0.8280065</td>
+<td style="text-align: right;">0.7048751</td>
+<td style="text-align: right;">0.1251546</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">XGBoost</td>
+<td style="text-align: right;">0.8241592</td>
+<td style="text-align: right;">0.7103068</td>
+<td style="text-align: right;">0.1244656</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">MLP</td>
+<td style="text-align: right;">0.8231816</td>
+<td style="text-align: right;">0.7035881</td>
+<td style="text-align: right;">0.2212996</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Elastic Net</td>
+<td style="text-align: right;">0.8246795</td>
+<td style="text-align: right;">0.7034900</td>
+<td style="text-align: right;">0.1275963</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Multinomial</td>
+<td style="text-align: right;">0.8223144</td>
+<td style="text-align: right;">0.7044462</td>
+<td style="text-align: right;">0.1280503</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<section id="roc-curves" class="level3">
+<h3 class="anchored" data-anchor-id="roc-curves">6.4.1 ROC Curves</h3>
+<p><strong>Multiclass ROC-AUC Evaluation</strong></p>
+<p>ROC (Receiver Operating Characteristic) curves for multiclass outcomes require extending the binary framework. We employ the <strong>one-vs-rest approach</strong>:</p>
+<ul>
+<li>Each class (No diabetes, Prediabetes, Diabetes) is treated as a separate binary problem against all other classes combined</li>
+<li>For each class, ROC curves plot True Positive Rate vs False Positive Rate across probability thresholds</li>
+<li><strong>Area Under Curve (AUC)</strong> summarizes discriminative ability: AUC = 0.5 indicates random guessing, AUC = 1.0 indicates perfect separation</li>
+<li>Despite class imbalance, ROC-AUC remains informative for comparing relative model performance, though it may be optimistic for rare classes (Prediabetes, Diabetes)</li>
+</ul>
+<p>Higher AUC values indicate better ability to distinguish each diabetes category from alternatives. Models with consistently high AUC across all three classes demonstrate robust multiclass discrimination.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>roc_auc_table <span class="ot">&lt;-</span> pred_all <span class="sc">|&gt;</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(model) <span class="sc">|&gt;</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">roc_auc</span>(</span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">truth =</span> Diabetes,</span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>    .pred_No_diabetes,</span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>    .pred_Prediabetes,</span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>    .pred_Diabetes,</span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">estimator =</span> <span class="st">"macro_weighted"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(model, .estimate) <span class="sc">|&gt;</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">arrange</span>(<span class="fu">desc</span>(.estimate)) <span class="sc">|&gt;</span></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rename</span>(</span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">Model   =</span> model,</span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">ROC-AUC</span><span class="st">`</span> <span class="ot">=</span> .estimate)</span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a>roc_auc_table </span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div class="kable-table">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">Model</th>
+<th style="text-align: right;">ROC-AUC</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">XGBoost</td>
+<td style="text-align: right;">0.8218354</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Random Forest</td>
+<td style="text-align: right;">0.8190474</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">MLP</td>
+<td style="text-align: right;">0.8183523</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Multinomial</td>
+<td style="text-align: right;">0.8148663</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Elastic Net</td>
+<td style="text-align: right;">0.8148129</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<blockquote class="blockquote">
+<p>ROC-AUC values are closely clustered across all five models, spanning less than two percentage points. Differences of this magnitude are unlikely to be practically meaningful, and if discrimination alone were the selection criterion, the unpenalised multinomial logistic regression would be preferred on grounds of computational simplicity and interpretability. However, ROC-AUC is threshold-independent and does not reflect class-specific recovery or probability calibration, motivating the broader evaluation that follows.</p>
+</blockquote>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>roc_all <span class="ot">&lt;-</span> pred_all <span class="sc">|&gt;</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(model) <span class="sc">|&gt;</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">roc_curve</span>(</span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">truth =</span> Diabetes,</span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>    .pred_No_diabetes,</span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>    .pred_Prediabetes,</span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>    .pred_Diabetes)</span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a><span class="fu">autoplot</span>(roc_all) <span class="sc">+</span></span>
+<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">"Multiclass ROC curves (one-vs-rest) — Test set"</span>,</span>
+<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a>       <span class="at">x =</span> <span class="st">"1 − Specificity"</span>,<span class="at">y =</span> <span class="st">"Sensitivity"</span>) <span class="sc">+</span></span>
+<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="st">"bottom"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="rq1_files/figure-html/rq1-roc-combined-1.svg" class="img-fluid figure-img" width="1152"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The multiclass ROC curves provide additional insight into discrimination performance across the three classes.</p>
+<p>For the <strong>Prediabetes</strong> panel, all models perform notably weaker than the other two classes, with curves closer to the diagonal reflecting the inherent difficulty of distinguishing this intermediate category. For <strong>Diabetes</strong> and <strong>No diabetes</strong>, all five models show strong and near-identical discrimination, with curves well above the diagonal and minimal separation between model types, consistent with the marginal AUC differences reported in the table above.</p>
+</section>
+<section id="confusion-matrices" class="level3">
+<h3 class="anchored" data-anchor-id="confusion-matrices">6.4.2 Confusion Matrices</h3>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>plot_cm <span class="ot">&lt;-</span> <span class="cf">function</span>(pred, title) {</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>  pred <span class="sc">|&gt;</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">conf_mat</span>(<span class="at">truth =</span> Diabetes, <span class="at">estimate =</span> .pred_class) <span class="sc">|&gt;</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">autoplot</span>(<span class="at">type =</span> <span class="st">"heatmap"</span>) <span class="sc">+</span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(<span class="at">title =</span> title) <span class="sc">+</span></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="st">"none"</span>)}</span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a>p_cm_xgb <span class="ot">&lt;-</span> <span class="fu">plot_cm</span>(pred_xgb, <span class="st">"XGBoost"</span>)</span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a>p_cm_rf <span class="ot">&lt;-</span> <span class="fu">plot_cm</span>(pred_rf,<span class="st">"Random Forest"</span>)</span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a>p_cm_mn <span class="ot">&lt;-</span> <span class="fu">plot_cm</span>(pred_mn, <span class="st">"Multinomial Logistic Regression"</span>)</span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a>p_cm_mlp  <span class="ot">&lt;-</span> <span class="fu">plot_cm</span>(pred_mlp, <span class="st">"MLP"</span>)</span>
+<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a>p_cm_glmnet  <span class="ot">&lt;-</span> <span class="fu">plot_cm</span>(pred_glmnet, <span class="st">"Elastic Net"</span>)</span>
+<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a>(p_cm_xgb <span class="sc">|</span> p_cm_rf <span class="sc">|</span> p_cm_mlp) <span class="sc">/</span></span>
+<span id="cb20-15"><a href="#cb20-15" aria-hidden="true" tabindex="-1"></a>(p_cm_mn <span class="sc">|</span> p_cm_glmnet) <span class="sc">+</span></span>
+<span id="cb20-16"><a href="#cb20-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot_layout</span>(<span class="at">guides =</span> <span class="st">"collect"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="rq1_files/figure-html/confusion-matrices-1.svg" class="img-fluid figure-img" width="1536"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The confusion matrices reveal notable differences in classification behaviour across the three models.</p>
+<p>The <strong>multinomial logistic regression model</strong> is the only model that correctly identifies a meaningful number of <strong>prediabetes cases</strong> (150 observations). In contrast, both <strong>XGBoost and random forest completely fail to predict the prediabetes class</strong>, assigning all observations in this category to either the no-diabetes or diabetes classes. This indicates that the tree-based models effectively collapse the problem into a two-class classification task, ignoring the intermediate category.</p>
+<p>For the <strong>no-diabetes class</strong>, all three models achieve high numbers of correct predictions due to the dominance of this category in the dataset. However, the multinomial model shows slightly higher correct classifications than the boosted tree model.</p>
+<p>For the <strong>diabetes class</strong>, all models correctly identify several thousand cases, though misclassification between diabetes and no-diabetes remains present across all models.</p>
+<p>Overall, the multinomial model demonstrates a <strong>more balanced classification behaviour</strong>, particularly by retaining predictive capacity for the minority prediabetes class.</p>
+<p><strong>Overall Assessment</strong></p>
+<p>Although gradient boosting and random forest performed competitively during cross-validation, the held-out test set evaluation suggests that <strong>multinomial logistic regression</strong> provides the most balanced performance across classes. In particular, it is the only model capable of correctly identifying prediabetes cases while maintaining strong discrimination for the other two classes.</p>
+</section>
+</section>
+<section id="threshold-adjustment-for-prediabetes-recovery" class="level2">
+<h2 class="anchored" data-anchor-id="threshold-adjustment-for-prediabetes-recovery"><strong>6.5 Threshold Adjustment for Prediabetes Recovery</strong></h2>
+<p>The confusion matrices presented in Section 6.4.2 revealed a consistent failure across all five models to predict Prediabetes at the default 0.5 classification threshold. As established in Section 6.3.1, the held-out test set reflects the true population distribution of 1.8% Prediabetes, a prevalence so low that posterior class probabilities rarely exceed the default boundary. The ROC-AUC results of approximately 0.82 across all models confirm that genuine discriminative signal exists, the models are producing meaningful Prediabetes probability estimates, but these are structurally suppressed below the decision threshold. This section investigates whether threshold adjustment can recover Prediabetes predictions and, if not, characterises the nature of the separability failure.</p>
+<section id="calibration-plot" class="level3">
+<h3 class="anchored" data-anchor-id="calibration-plot">6.4.3 Calibration Plot</h3>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>cal_plot_data <span class="ot">&lt;-</span> pred_all <span class="sc">|&gt;</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">Diabetes =</span> <span class="fu">factor</span>(Diabetes)) <span class="sc">|&gt;</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(model)</span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>cal_plot <span class="ot">&lt;-</span> <span class="cf">function</span>(pred_data, model_name) {</span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>  pred_data <span class="sc">|&gt;</span></span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(model <span class="sc">==</span> model_name) <span class="sc">|&gt;</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">cal_plot_windowed</span>(</span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a>      <span class="at">truth      =</span> Diabetes,</span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a>      <span class="at">estimate   =</span> <span class="fu">c</span>(.pred_No_diabetes, .pred_Prediabetes, .pred_Diabetes),</span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a>      <span class="at">step_size  =</span> <span class="fl">0.05</span></span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">+</span></span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(<span class="at">title =</span> model_name) <span class="sc">+</span></span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb21-15"><a href="#cb21-15" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="st">"none"</span>)</span>
+<span id="cb21-16"><a href="#cb21-16" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb21-17"><a href="#cb21-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-18"><a href="#cb21-18" aria-hidden="true" tabindex="-1"></a>p_cal_xgb    <span class="ot">&lt;-</span> <span class="fu">cal_plot</span>(pred_all, <span class="st">"XGBoost"</span>)</span>
+<span id="cb21-19"><a href="#cb21-19" aria-hidden="true" tabindex="-1"></a>p_cal_rf     <span class="ot">&lt;-</span> <span class="fu">cal_plot</span>(pred_all, <span class="st">"Random Forest"</span>)</span>
+<span id="cb21-20"><a href="#cb21-20" aria-hidden="true" tabindex="-1"></a>p_cal_mn     <span class="ot">&lt;-</span> <span class="fu">cal_plot</span>(pred_all, <span class="st">"Multinomial"</span>)</span>
+<span id="cb21-21"><a href="#cb21-21" aria-hidden="true" tabindex="-1"></a>p_cal_mlp    <span class="ot">&lt;-</span> <span class="fu">cal_plot</span>(pred_all, <span class="st">"MLP"</span>)</span>
+<span id="cb21-22"><a href="#cb21-22" aria-hidden="true" tabindex="-1"></a>p_cal_glmnet <span class="ot">&lt;-</span> <span class="fu">cal_plot</span>(pred_all, <span class="st">"Elastic Net"</span>)</span>
+<span id="cb21-23"><a href="#cb21-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-24"><a href="#cb21-24" aria-hidden="true" tabindex="-1"></a>(p_cal_xgb <span class="sc">|</span> p_cal_rf <span class="sc">|</span> p_cal_mn) <span class="sc">/</span></span>
+<span id="cb21-25"><a href="#cb21-25" aria-hidden="true" tabindex="-1"></a>(p_cal_mlp <span class="sc">|</span> p_cal_glmnet) <span class="sc">+</span></span>
+<span id="cb21-26"><a href="#cb21-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot_layout</span>(<span class="at">guides =</span> <span class="st">"collect"</span>) <span class="sc">&amp;</span></span>
+<span id="cb21-27"><a href="#cb21-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="st">"bottom"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="rq1_files/figure-html/calibration-plot-1.svg" class="img-fluid figure-img" width="1344"></p>
+</figure>
+</div>
+</div>
+</div>
+<p><strong>All models are severely overconfident for Prediabetes</strong>: the curves sit well above the diagonal across the board, meaning when a model predicts 20-30% Prediabetes probability, the actual event rate is much higher (~60-90%). This is the clearest possible confirmation that the default 0.5 threshold is too high,the models are generating useful Prediabetes signal at much lower probability values than 0.5.</p>
+<p><strong>XGBoost:</strong> Shows the most erratic calibration with a sharp drop around 0.25–0.30, suggesting its Prediabetes probabilities are concentrated in a narrow range with unstable behaviour at the boundary.</p>
+<p><strong>Random Forest:</strong> Shows a smooth but steep decline, with reasonably consistent overconfidence across the probability range.</p>
+<p><strong>Multinomial and Elastic Net:</strong> Nearly identical in behaviour, both showing high event rates at low predicted probabilities. This confirms that lasso regularisation did not meaningfully alter calibration behaviour relative to the unpenalised baseline.</p>
+<p><strong>MLP:</strong> Shows the widest confidence intervals, reflecting instability consistent with its poor log-loss performance in Section 6.4.</p>
+<p>The key takeaway is that all models are producing genuine Prediabetes signal at probabilities well below 0.5, warranting further investigation of the probability distributions before any threshold decision is made.</p>
+</section>
+<section id="predicted-probability-distribution" class="level3">
+<h3 class="anchored" data-anchor-id="predicted-probability-distribution"><strong>6.5.2 Predicted Probability Distribution</strong></h3>
+<p>Before selecting adjusted thresholds, the distribution of predicted Prediabetes probabilities is examined across true Prediabetes cases only, to identify where signal is concentrated and confirm that meaningful probability mass exists below the default threshold.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>pred_all <span class="sc">|&gt;</span></span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(Diabetes <span class="sc">==</span> <span class="st">"Prediabetes"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> .pred_Prediabetes, <span class="at">fill =</span> model)) <span class="sc">+</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_histogram</span>(<span class="at">bins =</span> <span class="dv">50</span>, <span class="at">alpha =</span> <span class="fl">0.8</span>) <span class="sc">+</span></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span> model, <span class="at">ncol =</span> <span class="dv">2</span>) <span class="sc">+</span></span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_continuous</span>(</span>
+<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">limits =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">0.5</span>),</span>
+<span id="cb22-8"><a href="#cb22-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">labels =</span> <span class="fu">percent_format</span>(<span class="at">accuracy =</span> <span class="dv">1</span>)) <span class="sc">+</span></span>
+<span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_viridis_d</span>() <span class="sc">+</span></span>
+<span id="cb22-10"><a href="#cb22-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb22-11"><a href="#cb22-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">title =</span> <span class="st">"Predicted Prediabetes probability — true Prediabetes cases only"</span>,</span>
+<span id="cb22-12"><a href="#cb22-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">x     =</span> <span class="st">"P(Prediabetes)"</span>,</span>
+<span id="cb22-13"><a href="#cb22-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">y     =</span> <span class="st">"Count"</span></span>
+<span id="cb22-14"><a href="#cb22-14" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb22-15"><a href="#cb22-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb22-16"><a href="#cb22-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="st">"none"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="rq1_files/figure-html/prob-distribution-1.svg" class="img-fluid figure-img" width="1440"></p>
+</figure>
+</div>
+</div>
+</div>
+<blockquote class="blockquote">
+<p>The distributions confirm that genuine Prediabetes signal exists across all models but is concentrated at probability values well below the default 0.5 threshold. For tree-based and parametric models, the required threshold to recover any meaningful Prediabetes predictions would fall in the 5–10% range, a region so low that it overlaps heavily with the probability mass of No diabetes and Diabetes observations. For MLP, the higher concentration around 25–30% is more promising in isolation, but the earlier calibration analysis demonstrated that even this range is characterised by wide uncertainty and unstable boundaries. Lowering thresholds to these levels would therefore generate substantial misclassification of the majority classes, trading a marginal gain in Prediabetes recall for a large increase in false positives across the other two categories.</p>
+</blockquote>
+<p><strong>6.5.3 Empirical Threshold Analysis and Separability Conclusion</strong></p>
+<p>To confirm this, empirical threshold optimisation via precision-recall F1 maximisation is applied to each model. The results are unambiguous.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>find_threshold <span class="ot">&lt;-</span> <span class="cf">function</span>(pred_data, model_name) {</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>  pred_data <span class="sc">|&gt;</span></span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(model <span class="sc">==</span> model_name) <span class="sc">|&gt;</span></span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="at">Prediabetes_truth =</span> <span class="fu">factor</span>(</span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>      <span class="fu">ifelse</span>(Diabetes <span class="sc">==</span> <span class="st">"Prediabetes"</span>, <span class="st">"Prediabetes"</span>, <span class="st">"Other"</span>),</span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>      <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"Prediabetes"</span>, <span class="st">"Other"</span>))) <span class="sc">|&gt;</span></span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">pr_curve</span>(</span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>      <span class="at">truth    =</span> Prediabetes_truth,</span>
+<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a>      .pred_Prediabetes,</span>
+<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a>      <span class="at">event_level =</span> <span class="st">"first"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb23-11"><a href="#cb23-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(</span>
+<span id="cb23-12"><a href="#cb23-12" aria-hidden="true" tabindex="-1"></a>      <span class="at">f1 =</span> <span class="dv">2</span> <span class="sc">*</span> precision <span class="sc">*</span> recall <span class="sc">/</span> (precision <span class="sc">+</span> recall),</span>
+<span id="cb23-13"><a href="#cb23-13" aria-hidden="true" tabindex="-1"></a>      <span class="at">model =</span> model_name) <span class="sc">|&gt;</span></span>
+<span id="cb23-14"><a href="#cb23-14" aria-hidden="true" tabindex="-1"></a>    <span class="fu">slice_max</span>(f1, <span class="at">n =</span> <span class="dv">1</span>)</span>
+<span id="cb23-15"><a href="#cb23-15" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb23-16"><a href="#cb23-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-17"><a href="#cb23-17" aria-hidden="true" tabindex="-1"></a><span class="fu">bind_rows</span>(</span>
+<span id="cb23-18"><a href="#cb23-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">find_threshold</span>(pred_all, <span class="st">"XGBoost"</span>),</span>
+<span id="cb23-19"><a href="#cb23-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">find_threshold</span>(pred_all, <span class="st">"Random Forest"</span>),</span>
+<span id="cb23-20"><a href="#cb23-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">find_threshold</span>(pred_all, <span class="st">"Multinomial"</span>),</span>
+<span id="cb23-21"><a href="#cb23-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">find_threshold</span>(pred_all, <span class="st">"Elastic Net"</span>),</span>
+<span id="cb23-22"><a href="#cb23-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">find_threshold</span>(pred_all, <span class="st">"MLP"</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb23-23"><a href="#cb23-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(model, .threshold, precision, recall, f1)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div class="kable-table">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">model</th>
+<th style="text-align: right;">.threshold</th>
+<th style="text-align: right;">precision</th>
+<th style="text-align: right;">recall</th>
+<th style="text-align: right;">f1</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">XGBoost</td>
+<td style="text-align: right;">0.0726778</td>
+<td style="text-align: right;">0.0464589</td>
+<td style="text-align: right;">0.1431065</td>
+<td style="text-align: right;">0.0701454</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Random Forest</td>
+<td style="text-align: right;">0.0950543</td>
+<td style="text-align: right;">0.0421590</td>
+<td style="text-align: right;">0.1369983</td>
+<td style="text-align: right;">0.0644764</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Multinomial</td>
+<td style="text-align: right;">0.1057813</td>
+<td style="text-align: right;">0.0433170</td>
+<td style="text-align: right;">0.2853403</td>
+<td style="text-align: right;">0.0752156</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Elastic Net</td>
+<td style="text-align: right;">0.1027982</td>
+<td style="text-align: right;">0.0434669</td>
+<td style="text-align: right;">0.2905759</td>
+<td style="text-align: right;">0.0756217</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">MLP</td>
+<td style="text-align: right;">0.2704635</td>
+<td style="text-align: right;">0.0389688</td>
+<td style="text-align: right;">0.1701571</td>
+<td style="text-align: right;">0.0634146</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<p>Precision values remain below 5% across all five models at their respective optimal thresholds. For every true Prediabetes case correctly identified, approximately 20 non-Prediabetes observations would be misclassified as Prediabetes. No operationally useful classification boundary exists within the observable probability range for any model, and threshold adjustment is therefore not pursued further.</p>
+<p>Taken together, the calibration plots, probability distributions, and threshold analysis converge on a single conclusion. Prediabetes represents a structurally near-inseparable class in this feature space at population prevalence. Its clinical profile overlaps substantially with both adjacent categories, and the available self-reported survey predictors lack the granularity required to isolate the transitionary prediabetic phenotype at the decision boundary. This is consistent with broader evidence that prediabetes detection from survey-level data remains a fundamental challenge even under optimal modelling conditions, and points toward the need for continuous biomarker data such as HbA1c or fasting glucose to achieve clinically meaningful Prediabetes classification.</p>
+</section>
+</section>
+<section id="model-interpretation" class="level2">
+<h2 class="anchored" data-anchor-id="model-interpretation">6.5 Model Interpretation</h2>
+<p><strong>Triangulation Strategy for Model Interpretation</strong></p>
+<p>To ensure robust identification of diabetes risk factors, <strong>methodological triangulation</strong> is employed by comparing interpretations across different analytical approaches:</p>
+<ul>
+<li><strong>Multinomial logistic regression (Log-Odds):</strong> Provides parametric coefficient estimates assuming linear additive effects. Interpretable but limited to linear relationships</li>
+<li><strong>SHAP values (XGBoost):</strong> Model-agnostic feature attribution capturing non-linear effects and interactions through tree-based partitioning</li>
+<li><strong>Variable Importance (XGBoost gain):</strong> Measures total loss reduction when features are used for splits, reflecting predictive utility</li>
+</ul>
+<p><strong>Convergence between methods</strong> strengthens confidence that identified risk factors are robust across modelling assumptions. <strong>Divergence</strong> indicates non-linearities, interactions, or violations of parametric assumptions that only flexible models capture. Where findings conflict, consistency patterns are prioritized and discrepancies are noted as areas requiring further investigation.</p>
+<section id="log-odds-ratios-multinomial-logistic-regression" class="level3">
+<h3 class="anchored" data-anchor-id="log-odds-ratios-multinomial-logistic-regression">6.5.1 Log-Odds Ratios (Multinomial Logistic Regression)</h3>
+<p>Multinomial logistic regression estimates the log-odds of belonging to each diabetes category relative to a reference category. In this analysis, <strong>No diabetes</strong> serves as the reference class.</p>
+<p>Positive coefficients indicate <strong>higher odds of belonging to the specified diabetes category</strong>, while negative coefficients indicate <strong>lower odds relative to the reference group</strong>.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>multinom_coefs_tidy <span class="sc">|&gt;</span></span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(term <span class="sc">!=</span> <span class="st">"(Intercept)"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> odds_ratio, <span class="at">y =</span> <span class="fu">reorder</span>(term, odds_ratio))) <span class="sc">+</span></span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>()  <span class="sc">+</span></span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_vline</span>(<span class="at">xintercept =</span> <span class="dv">1</span>, <span class="at">linetype =</span> <span class="st">"dashed"</span>) <span class="sc">+</span></span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span> y.level) <span class="sc">+</span></span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">"Odds Ratio"</span>,</span>
+<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">"Predictor"</span>,</span>
+<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">title =</span> <span class="st">"Odds ratios for predictors of diabetes status"</span></span>
+<span id="cb24-11"><a href="#cb24-11" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="rq1_files/figure-html/ods-plot-rq1-1.svg" class="img-fluid figure-img" width="1344"></p>
+</figure>
+</div>
+</div>
+</div>
+<p><strong>Multinomial Logistic Regression: Odds Ratio (OR) Summary</strong></p>
+<p><em>OR &gt; 1 indicates increased odds; OR &lt; 1 indicates decreased odds.</em></p>
+<p><strong>Synthesis of Findings</strong></p>
+<ul>
+<li><p><strong>Primary Drivers:</strong> Clinical indicators (Hypertension, Hypercholesterolemia, and BMI) represent the most significant risk. High blood pressure, in particular, yields a <strong>139% increase</strong> in the odds of diabetes (<span class="math inline">\(OR = 2.39\)</span>).</p></li>
+<li><p><strong>The BMI Gradient:</strong> The data shows a clear progression where BMI impacts diabetes (<span class="math inline">\(OR = 1.72\)</span>) more severely than prediabetes (<span class="math inline">\(OR = 1.51\)</span>), confirming its role in disease advancement.</p></li>
+<li><p><strong>Behavioral Mediation:</strong> The lack of independent effect for physical activity (<span class="math inline">\(OR = 1.00\)</span>) suggests its impact is likely <strong>fully mediated</strong> by metabolic variables like BMI and blood pressure.</p></li>
+<li><p><strong>Statistical Anomalies:</strong> The negative association with heavy alcohol (<span class="math inline">\(OR = 0.31\)</span>) likely reflects <strong>selection bias</strong> (e.g., “sick quitters” or health-conscious adjustments after diagnosis) rather than a biological protective effect.</p></li>
+</ul>
+<p><strong>Conclusion</strong></p>
+<p>Diabetes status in this population is best characterized by a <strong>multifactorial cardiometabolic profile</strong>. While age and sex are relevant, clinical markers of obesity and metabolic syndrome remain the most effective predictors for distinguishing between healthy, prediabetic, and diabetic individuals.</p>
+</section>
+<section id="global-shap-importance" class="level3">
+<h3 class="anchored" data-anchor-id="global-shap-importance">6.5.2 Global SHAP importance</h3>
+<p><strong>SHAP Interpretation Methodology</strong></p>
+<p>To complement the parametric log-odds interpretation, we employ <strong>SHAP (SHapley Additive exPlanations)</strong> to quantify feature contributions in the XGBoost model. SHAP offers several advantages:</p>
+<ul>
+<li><strong>Model-agnostic foundation</strong> grounded in game theory, enabling comparison across model types</li>
+<li><strong>TreeSHAP algorithm</strong> provides exact Shapley values by leveraging XGBoost tree structure (no Monte Carlo approximation needed)</li>
+<li><strong>Multiclass compatibility</strong> computes separate contributions for each diabetes category (No diabetes, Prediabetes, Diabetes)</li>
+<li><strong>Mean absolute SHAP values</strong> reveal global feature importance by measuring how much each feature, on average, shifts predicted probabilities from baseline</li>
+</ul>
+<p>By comparing SHAP importance with logistic regression odds ratios, we assess method convergence—agreement strengthens confidence in identified risk factors, while discrepancies highlight non-linearities the parametric model cannot capture.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>xgb_engine <span class="ot">&lt;-</span> <span class="fu">extract_fit_engine</span>(xgb_final_fit)</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>test_processed <span class="ot">&lt;-</span> <span class="fu">bake</span>(</span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">prep</span>(<span class="fu">extract_preprocessor</span>(xgb_final_wf)),</span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">new_data =</span> diab_test</span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-8"><a href="#cb25-8" aria-hidden="true" tabindex="-1"></a>X <span class="ot">&lt;-</span> test_processed <span class="sc">|&gt;</span></span>
+<span id="cb25-9"><a href="#cb25-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="sc">-</span>Diabetes) <span class="sc">|&gt;</span></span>
+<span id="cb25-10"><a href="#cb25-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">as.matrix</span>()</span>
+<span id="cb25-11"><a href="#cb25-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-12"><a href="#cb25-12" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">123</span>)</span>
+<span id="cb25-13"><a href="#cb25-13" aria-hidden="true" tabindex="-1"></a>X_sample <span class="ot">&lt;-</span> X[<span class="fu">sample</span>(<span class="fu">nrow</span>(X), <span class="dv">10000</span>), ]</span>
+<span id="cb25-14"><a href="#cb25-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-15"><a href="#cb25-15" aria-hidden="true" tabindex="-1"></a><span class="co"># shp &lt;- shapviz(xgb_engine, X_pred = X_sample)</span></span>
+<span id="cb25-16"><a href="#cb25-16" aria-hidden="true" tabindex="-1"></a><span class="co"># write_rds(shp, "shp_rq1.rds")</span></span>
+<span id="cb25-17"><a href="#cb25-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-18"><a href="#cb25-18" aria-hidden="true" tabindex="-1"></a><span class="co"># Load precomputed SHAP values to avoid recomputing expensive shapviz calculations</span></span>
+<span id="cb25-19"><a href="#cb25-19" aria-hidden="true" tabindex="-1"></a>shp <span class="ot">&lt;-</span> <span class="fu">read_rds</span>(<span class="st">"shp_rq1.rds"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sv_importance</span>(shp, <span class="at">kind =</span> <span class="st">"bar"</span>) <span class="sc">+</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_discrete</span>(</span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">labels =</span> <span class="fu">c</span>(</span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>      <span class="st">"No diabetes"</span>,</span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a>      <span class="st">"Prediabetes"</span>,</span>
+<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a>      <span class="st">"Diabetes"</span>)</span>
+<span id="cb26-7"><a href="#cb26-7" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="rq1_files/figure-html/global-shp-rq1-1.svg" class="img-fluid figure-img" width="1344"></p>
+</figure>
+</div>
+</div>
+</div>
+<blockquote class="blockquote">
+<p>The SHAP importance plot indicates that cardiometabolic indicators dominate the predictive structure of the model. High blood pressure, general health status, high cholesterol, and BMI exhibit the largest mean absolute SHAP contributions across classes, indicating they play the strongest role in shifting predicted probabilities of diabetes status. Age also contributes meaningfully, while behavioural variables such as smoking, fruit consumption, and alcohol use show comparatively smaller effects. This pattern closely mirrors the multinomial logistic regression results, reinforcing the conclusion that diabetes status in this dataset is primarily driven by metabolic and health status indicators rather than lifestyle variables alone.</p>
+</blockquote>
+</section>
+<section id="variable-importance" class="level3">
+<h3 class="anchored" data-anchor-id="variable-importance">6.5.3 Variable Importance</h3>
+<p><strong>Variable Importance: Gain Metric</strong></p>
+<p>XGBoost variable importance is computed using the <strong>gain</strong> metric, which quantifies each feature’s contribution to model performance:</p>
+<ul>
+<li><strong>Gain</strong> measures the total reduction in the loss function (e.g., multi-class log-loss) achieved whenever a feature is used to split nodes across all trees in the ensemble</li>
+<li>Features with high gain contribute substantially to improving predictions by creating splits that better separate diabetes categories</li>
+<li><strong>Gain vs alternatives:</strong> Unlike split frequency (which counts how often a feature is used) or cover (which weights by number of observations), gain directly captures predictive impact and effect magnitude</li>
+</ul>
+<p>Higher gain values indicate features that most effectively reduce prediction error when incorporated into the model’s decision rules. This metric complements SHAP importance by focusing on in-model utility rather than marginal contributions to individual predictions.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>xgb_final_fit <span class="sc">|&gt;</span> </span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">extract_fit_parsnip</span>() <span class="sc">|&gt;</span> </span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">vip</span>(<span class="at">num_features =</span> <span class="dv">15</span>, </span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>      <span class="at">geom =</span> <span class="st">"col"</span>,</span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a>      <span class="at">aesthetics =</span> <span class="fu">list</span>(<span class="at">fill =</span> <span class="st">"steelblue"</span>,<span class="at">color =</span> <span class="st">'black'</span>, <span class="at">alpha =</span> <span class="fl">0.8</span>)) <span class="sc">+</span></span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">"Variable Importance: XGBoost Model"</span>,</span>
+<span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a>       <span class="at">subtitle =</span> <span class="st">"Top 15 predictors based on gain"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="rq1_files/figure-html/vip-rq1-1.svg" class="img-fluid figure-img" width="1344"></p>
+</figure>
+</div>
+</div>
+</div>
+<ul>
+<li><p><strong>Consistency with Statistical Findings:</strong> The VIP confirms the results from the multinomial log-odds analysis (Section 6.5.1), with <strong>HighBP</strong>, <strong>BMI</strong>, and <strong>HighChol</strong> consistently appearing as the most influential predictors. This triangulation of methods strengthens the argument that these clinical markers are the primary determinants of diabetes risk in this dataset.</p></li>
+<li><p><strong>The “Prediabetes” Paradox:</strong> Despite the high importance scores for these top features, the model’s struggle to classify the “Prediabetes” class suggests a “ceiling effect.” While variables like <strong>HighBP</strong> and <strong>GenHlth</strong> (General Health) are excellent at distinguishing between “Healthy” and “Diabetic” individuals, the feature space lacks the specific granularity required to isolate the transitionary prediabetic phase.</p></li>
+<li><p><strong>Lifestyle vs.&nbsp;Clinical Markers:</strong> Interestingly, clinical markers (BMI, Blood Pressure) rank significantly higher than lifestyle factors such as <strong>PhysActivity</strong> or <strong>Fruits</strong>. This implies that while lifestyle choices contribute to the outcome, the physiological manifestations (the “clinical profile”) are the more immediate and powerful predictors for the gradient-boosted trees.</p></li>
+</ul>
+</section>
+</section>
+<section id="conclusion-model-interpretability-and-determinants" class="level2">
+<h2 class="anchored" data-anchor-id="conclusion-model-interpretability-and-determinants">6.6 Conclusion: Model Interpretability and Determinants</h2>
+<p>The comprehensive analysis of diabetes status, conducted through both statistical and machine learning frameworks, demonstrates that diabetes risk in this population is best characterized by a multifactorial cardiometabolic profile. By triangulating the results from multinomial log-odds, XGBoost Variable Importance, and SHAP values, this study provides a robust validation of the primary drivers of the disease.</p>
+<ul>
+<li><p><strong>Triangulation of Risk Factors:</strong> There is a clear consensus across all analytical methods regarding the primary determinants of health. The multinomial logistic regression identified <strong>High Blood Pressure</strong> as the strongest categorical predictor, with an associated 139% increase in the odds of a diabetes diagnosis (<span class="math inline">\(OR = 2.39\)</span>). This finding is directly mirrored in the <strong>XGBoost Variable Importance Plot (VIP)</strong>, where HighBP ranks as a top-tier feature, and is further clarified by the <strong>SHAP summary plot</strong>, which illustrates how high values for blood pressure, BMI, and cholesterol consistently push the model’s prediction toward the diabetic class.</p></li>
+<li><p><strong>Predictive Nonlinearity and Impact:</strong> While the linear multinomial model provides clear odds ratios, the SHAP analysis reveals the nuanced, non-linear impacts of features such as <strong>Age</strong> and <strong>General Health</strong>. The SHAP distribution reveals a significant clustering of high-risk impact for older age groups, suggesting that risk does not simply increase linearly, but rather accelerates as multiple clinical markers, such as BMI and cholesterol, coincide.</p></li>
+<li><p><strong>The “Prediabetes” Gap and Structural Challenges:</strong> A critical finding of this synthesis is the discrepancy in class identification across models. While the machine learning models (XGBoost and Random Forest) performed competitively in overall discrimination, they effectively collapsed the classification into a binary task, failing to isolate the <strong>Prediabetes</strong> class. The SHAP values show a significant overlap in the middle of the feature distribution, explaining this struggle, the clinical signature of prediabetes in this dataset is too similar to the surrounding classes for the boosting algorithm to partition effectively. Conversely, the multinomial logistic regression demonstrated superior balance, maintaining the ability to distinguish the subtle physiological transitions inherent in the intermediate prediabetic category.</p></li>
+<li><p><strong>Socioeconomic and Actionable Clinical Profiles:</strong> Beyond clinical indicators, general health perception and age remained significant predictors, yet lifestyle factors, such as physical activity and diet, showed weaker direct associations than physiological manifestations. This implies that while lifestyle choices are foundational, they may operate indirectly through their impact on measurable markers like BMI and blood pressure. The synthesis confirms that a high-risk profile is defined by the intersection of these clinical markers, which consistently dominate the top of both the VIP and SHAP rankings, identifying them as the most critical targets for screening and preventative intervention.</p></li>
+</ul>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<tbody>
+<tr class="odd">
+<td><strong>Method</strong></td>
+<td><strong>Key Strength</strong></td>
+<td><strong>Primary Top Predictors</strong></td>
+</tr>
+<tr class="even">
+<td><strong>Multinomial Logistic</strong></td>
+<td>Identifies the “Prediabetes” gradient</td>
+<td>HighBP, BMI, Age</td>
+</tr>
+<tr class="odd">
+<td><strong>XGBoost VIP (Gain)</strong></td>
+<td>Highlights overall model efficiency</td>
+<td>HighBP, GenHlth, BMI</td>
+</tr>
+<tr class="even">
+<td><strong>SHAP Analysis</strong></td>
+<td>Shows direction and impact of features</td>
+<td>HighBP, BMI, HighChol</td>
+</tr>
+</tbody>
+</table>
+<p>In summary, the triangulation of results from the <strong>Odds Ratios</strong>, <strong>SHAP values</strong>, and <strong>XGBoost Variable Importance</strong> provides a robust validation of the cardiometabolic risk factors. For clinical application, the multinomial model remains the most “fit-for-purpose” tool due to its unique capacity to identify individuals in the critical prediabetic phase.</p>
+</section>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
