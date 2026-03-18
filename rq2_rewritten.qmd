@@ -1,0 +1,875 @@
+---
+title: "Modelling Health Indicators"
+subtitle: "MA7442 Modelling Data — RQ2"
+author: "Student ID: 259043528"
+date: "2026-03-02"
+format:
+  pdf:
+    geometry:
+      - top=2cm
+      - bottom=2cm
+      - left=1.5cm
+      - right=1.5cm
+    documentclass: article
+    df-print: kable
+---
+
+```{r}
+#| label: Loading_Packages
+#| message: false
+#| warning: false
+#| include: false
+
+# Core framework
+library(tidymodels)
+library(tidyverse)
+
+# Data exploration
+library(skimr)
+library(scales)
+
+# Workflow utilities
+library(workflowsets)
+library(finetune)
+library(themis)
+library(probably)
+library(conflicted)
+
+# Visualisation
+library(viridis)
+library(patchwork)
+library(vip)
+
+# Model engines
+library(ranger)
+
+# Model interpretability
+library(shapviz)
+
+# Statistical modelling
+library(MASS)
+library(pscl)
+library(lmtest)
+library(marginaleffects)
+library(ggeffects)
+library(rcompanion)
+
+# Parallel processing
+library(doParallel)
+
+# Reporting
+library(knitr)
+library(kableExtra)
+
+tidymodels_prefer(quiet = TRUE)
+conflicts_prefer(yardstick::accuracy)
+
+```
+
+```{r}
+#| include: false
+# Plot format and dimension
+knitr::opts_chunk$set(dev = "cairo_pdf")
+knitr::opts_chunk$set(fig.width = 14, fig.height = 7)
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE
+)
+
+# Set global ggplot theme
+theme_set(
+  theme_classic(base_size = 16) +
+    theme(
+      plot.title = element_text(size = 20, face = "bold"),
+      axis.title = element_text(size = 18),
+      axis.text  = element_text(size = 14),
+      legend.title  = element_text(size = 13),
+      legend.text = element_text(size = 12),
+      strip.text = element_text(face = "bold", size = 14),
+      legend.background = element_rect(
+        colour = "black",
+        fill = "white",
+        linewidth = 0.5
+      )
+    )
+)
+```
+
+```{r}
+#| label: data-import-and-recode
+#| message: false
+#| warning: false
+#| include: false
+
+diab <- read_csv("dataset1.csv")
+
+diab <- diab |>
+  mutate(
+    Diabetes = factor(
+      Diabetes_012,
+      levels = c(0, 1, 2),
+      labels = c("No diabetes", "Prediabetes", "Diabetes")
+    ),
+    across(
+      c(CholCheck, Smoker, Stroke, HeartDiseaseorAttack,
+        PhysActivity, Fruits, Veggies, HvyAlcoholConsump,
+        AnyHealthcare, NoDocbcCost, DiffWalk),
+      function(x) factor(x, levels = c(1, 0), labels = c("Yes", "No"))
+    ),
+    across(
+      c(HighBP, HighChol),
+      function(x) factor(x, levels = c(0, 1), labels = c("Not High", "High"))
+    ),
+    Sex = factor(Sex, levels = c(0, 1), labels = c("Female", "Male")),
+    GenHlth = factor(
+      GenHlth,
+      levels  = 1:5,
+      labels  = c("Excellent", "Very good", "Good", "Fair", "Poor"),
+      ordered = TRUE
+    ),
+    Age = factor(
+      Age,
+      levels  = 1:13,
+      labels  = c("18–24", "25–29", "30–34", "35–39", "40–44",
+                  "45–49", "50–54", "55–59", "60–64", "65–69",
+                  "70–74", "75–79", "80+"),
+      ordered = TRUE
+    ),
+    Education = factor(
+      Education,
+      levels  = 1:6,
+      labels  = c("Kindergarten or less", "Grades 1–8",
+                  "Grades 9–11", "High school graduate",
+                  "Some college / technical", "College graduate"),
+      ordered = TRUE
+    ),
+    Income = factor(
+      Income,
+      levels  = 1:8,
+      labels  = c("< $10k", "$10k–$14k", "$15k–$19k", "$20k–$24k",
+                  "$25k–$34k", "$35k–$49k", "$50k–$74k", "$75k+"),
+      ordered = TRUE
+    )
+  ) |>
+  select(-Diabetes_012)
+```
+
+## 7. Socioeconomic Moderation of Cardiovascular Risk {#sec-rq2}
+
+### 7.1 Modelling Objective
+
+> ***Which combinations of cardiometabolic, behavioural, and socioeconomic characteristics define the highest- and lowest-risk cardiovascular profiles in this population, and do socioeconomic factors, income and educational attainment retain independent associations with cardiovascular risk after adjusting for clinical and behavioural predictors? If so, is this association more pronounced among individuals carrying a greater clinical risk load?***
+
+This section addresses the following research question: which combinations of cardiometabolic, behavioural, and socioeconomic characteristics define the highest- and lowest-risk cardiovascular profiles in this population, and do socioeconomic factors, income and educational attainment, retain independent associations with cardiovascular risk after adjusting for clinical and behavioural predictors? If so, is this association more pronounced among individuals carrying a greater clinical risk load?
+
+The analysis pursues two objectives:
+
+-   Identify which clinical, behavioural, and socioeconomic characteristics place individuals at highest and lowest cardiovascular risk
+
+-   Assess whether income and educational attainment retain independent associations with heart disease once clinical and behavioural factors are held constant, and whether this is stronger among individuals with greater clinical risk
+
+Socioeconomic disadvantage may amplify clinical risk rather than simply co-occur with it, through restricted access to preventive care and greater chronic stress exposure. Two modelling approaches are used to investigate this:
+
+-   Logistic regression and elastic net establish the additive baseline, capturing direct associations without interaction structure
+
+-   XGBoost detects conditional patterns through recursive partitioning. A split on Income following a split on HighBP captures that the contribution of high blood pressure varies by income level without requiring manual interaction terms
+
+SHAP interaction analysis and stratified dependence plots then assess whether detected patterns are practically meaningful.
+
+**7.2 Outcome Variable**
+
+The outcome is HeartDiseaseorAttack, a binary indicator of self-reported coronary heart disease or myocardial infarction. Around 9% of respondents report a diagnosis. A model predicting no cases for every observation would still achieve 91% accuracy, making headline accuracy uninformative. The analysis therefore prioritises PR-AUC alongside ROC-AUC and F1-score.
+
+### 7.3 Training and Validation
+
+#### 7.3.1 Data Partitioning and Resampling
+
+The dataset is partitioned into a 75% training set and 25% held-out test set using stratified sampling on `HeartDiseaseorAttack`. Ten-fold stratified cross-validation is applied within the training set to generate stable performance estimates during hyperparameter tuning. The test set is kept strictly held-out until the final comparative evaluation.
+
+```{r}
+#| label: rq2-split
+
+set.seed(42)
+heart_split <- initial_split(diab, prop = 0.75,
+                             strata = HeartDiseaseorAttack)
+heart_train <- training(heart_split)
+heart_test  <- testing(heart_split)
+heart_folds <- vfold_cv(heart_train, v = 10,
+                        strata = HeartDiseaseorAttack)
+
+heart_train |> count(HeartDiseaseorAttack) |> mutate(prop = n / sum(n))
+heart_test  |> count(HeartDiseaseorAttack) |> mutate(prop = n / sum(n))
+```
+
+#### 7.3.2 Recipe Definition and Preprocessing
+
+With approximately 9% positive cases, models trained on the raw class distribution will default to majority-class predictions. Downsampling is applied within each cross-validation fold via `step_downsample()`, retaining a majority-to-minority ratio of `under_ratio = 3`, producing roughly a 75-25 split per fold. This gives the model sufficient minority-class exposure while keeping class proportions realistic enough to avoid probability miscalibration. Downsampling is applied inside the recipe rather than to the full training set, so each fold's validation subset remains unmodified and leakage is prevented.
+
+The remaining preprocessing steps handle variable scaling and encoding:
+
+-   `step_nzv()` removes near-zero variance predictors
+
+-   `step_ordinalscore()` converts ordered factors (Age, Education, Income, GenHlth) to numeric scores preserving ordinal structure
+
+-   `step_dummy()` encodes remaining nominal predictors as binary indicators
+
+-   `step_normalize()` standardises BMI, MentHlth and PhysHlth to zero mean and unit variance
+
+```{r}
+#| label: rq2-recipe
+
+
+heart_recipe <- recipe(HeartDiseaseorAttack ~ ., data = heart_train) |>
+  step_nzv(all_predictors()) |>
+  step_ordinalscore(Age, Education, Income, GenHlth) |>
+  step_dummy(all_nominal_predictors()) |>
+  step_normalize(BMI, MentHlth, PhysHlth) |>
+  step_downsample(HeartDiseaseorAttack, under_ratio = 3, seed = 42)
+
+print(heart_recipe)
+```
+
+```{r}
+heart_recipe |> 
+  prep() |> 
+  bake(new_data = NULL) |> 
+  count(HeartDiseaseorAttack)
+```
+
+#### 7.3.3 Model Specification
+
+Three candidate models are defined, each contributing a distinct analytical lens on the research question.
+
+| Model | Type | Tuned Parameters | Role |
+|------------------|------------------|:----------------:|------------------|
+| Logistic Regression | Parametric, linear | None | Additive baseline; maximum-likelihood fit |
+| Elastic Net LR | Parametric, linear | `penalty`, `mixture` | Regularised baseline; controls for overfitting |
+| XGBoost | Ensemble (boosting) | `tree_depth`, `learn_rate`, `loss_reduction`, `sample_size`, `mtry`, `min_n` | Captures non-linear and interaction structure |
+
+Including both a plain and regularised logistic baseline separates the contribution of regularisation from the contribution of model flexibility. XGBoost is included specifically because recursive partitioning can surface conditional relationships between socioeconomic and clinical predictors that additive models cannot represent. It is selected over Random Forest for two reasons: it was the stronger performer in RQ1 on a closely related outcome, and its `loss_reduction` parameter penalises unnecessary splits directly, making it less likely to recover spurious interactions from noise.
+
+```{r}
+#| label: rq2-specs
+
+lr_plain_spec <- logistic_reg() |>
+  set_engine("glm") |>
+  set_mode("classification")
+
+lr_spec <- logistic_reg(penalty = tune(), mixture = tune()) |>
+  set_engine("glmnet") |>
+  set_mode("classification")
+
+xgb_spec <- boost_tree(
+  trees = 512,
+  tree_depth = tune(),
+  learn_rate = tune(),
+  loss_reduction = tune(),
+  sample_size = tune(),
+  mtry = tune(),
+  min_n = tune()) |>
+  set_engine("xgboost") |>
+  set_mode("classification")
+```
+
+#### 7.3.4 Workflow Set Construction
+
+All three models are combined with the shared recipe using `workflow_set()`. The unregularised logistic model has no tunable parameters and is handled via `fit_resamples` implicitly through `workflow_map`. Grid sizes are attached per-model via `option_add()`: 30 candidate configurations for the elastic net (a two-parameter space well-covered at this resolution) and 75 for XGBoost (six parameters requiring broader exploration). This mirrors the approach used in RQ1.
+
+```{r}
+#| label: rq2-wfset
+
+grid_enet <-  grid_space_filling(
+  penalty(range = c(-4, 0)),
+  mixture(range = c(0, 1)),
+  size = 30)
+
+grid_xgb <- grid_space_filling(
+  tree_depth(range = c(3L, 6L)),
+  learn_rate(range = c(-2, -0.7)),
+  loss_reduction(range = c(-3, 0)),
+  sample_size = sample_prop(range = c(0.6, 0.9)),
+  mtry(range = c(5L, 15L)),
+  min_n(range = c(10L, 40L)),
+  size = 75)
+
+heart_models <- workflow_set(
+  preproc = list(base_rec = heart_recipe),
+  models  = list(
+    logistic_plain = lr_plain_spec,
+    logistic_enet  = lr_spec,
+    xgboost = xgb_spec)) |>
+  option_add(id = "base_rec_logistic_enet",grid = grid_enet) |>
+  option_add(id = "base_rec_xgboost", grid = grid_xgb)
+```
+
+#### 7.3.5 Metric Selection and Model Execution
+
+Four evaluation metrics are defined. Log-loss (`mn_log_loss`) is the primary tuning metric, selected because it directly penalises confident mispredictions regardless of which class they favour. A configuration that collapses to majority-class predictions will incur high log-loss even if accuracy looks superficially reasonable, making it a reliable diagnostic for degenerate classifiers under imbalance. PR-AUC and ROC-AUC are tracked as supplementary discrimination measures, and F1-score captures the precision-recall trade-off at the default decision boundary.
+
+```{r}
+#| label: rq2-metrics
+
+heart_metrics <- metric_set(mn_log_loss, roc_auc, pr_auc, f_meas)
+```
+
+### 7.3.6 Hyperparameter Tuning Strategy
+
+Racing ANOVA (`tune_race_anova`) is used rather than full grid search. After an initial burn-in of three folds, configurations with statistically inferior log-loss (alpha = 0.05) are eliminated early, concentrating the remaining cross-validation budget on the most promising hyperparameter regions. This is particularly valuable for XGBoost given its six-dimensional search space, where exhaustive evaluation would be computationally prohibitive.
+
+```{r}
+#| label: heart-control
+heart_control <- control_race(
+  save_pred     = TRUE,
+  save_workflow = FALSE,
+  verbose_elim  = TRUE,
+  verbose = TRUE,
+  burn_in = 3,
+  alpha = 0.05,
+  randomize = TRUE,
+  allow_par = TRUE,
+  extract = NULL)
+
+```
+
+```{r}
+#| label: rq2-tune
+
+# cl <- makePSOCKcluster(4)
+# registerDoParallel(cl)
+# 
+# heart_results <- heart_models |>
+#   workflow_map(
+#     fn         = "tune_race_anova",
+#     resamples  = heart_folds,
+#     metrics    = heart_metrics,
+#     seed       = 42,
+#     control    = heart_control)
+# 
+# stopCluster(cl)
+# write_rds(heart_results, "heart_results.rds")
+```
+
+```{r}
+#| label: rq2-load
+
+heart_results <- read_rds("heart_results.rds")
+```
+
+#### 7.3.7 Comparative Tuning Performance
+
+The figure below ranks all candidate configurations from best to worst on each metric across the three model families.
+
+```{r}
+#| label: pretty-lot-def
+#| include: false
+pretty_autoplot_rq2 <- function(x, metric, ylab, title, pct = TRUE) {
+  autoplot(x, metric = metric) +
+    aes(colour = wflow_id) +
+    labs(title = title,
+         x = "Workflow rank (best \u2192 worst)",
+         y = ylab,
+         colour = "Model") +
+    scale_x_continuous(breaks = pretty_breaks(6)) +
+    scale_y_continuous(
+      labels = if (pct) percent_format(accuracy = 0.1)
+               else number_format(accuracy = 0.001)
+    ) +
+    scale_colour_discrete(labels = model_labels) +
+    theme(legend.position = "bottom")
+}
+```
+
+```{r}
+#| label: rq2-autoplot
+#| fig-height: 8
+#| fig-width: 15
+
+model_labels <- c(
+  "base_rec_logistic_plain" = "Logistic Regression (plain)",
+  "base_rec_logistic_enet"  = "Elastic Net LR",
+  "base_rec_xgboost"        = "XGBoost"
+)
+
+p_ll   <- pretty_autoplot_rq2(heart_results, "mn_log_loss", "Log-Loss",
+                               "Log-Loss (Primary Tuning Metric)", pct = FALSE)
+p_roc  <- pretty_autoplot_rq2(heart_results, "roc_auc", "ROC\u2013AUC",
+                               "Discrimination (ROC\u2013AUC)")
+p_pr   <- pretty_autoplot_rq2(heart_results, "pr_auc",  "PR\u2013AUC",
+                               "Precision\u2013Recall AUC")
+p_f1   <- pretty_autoplot_rq2(heart_results, "f_meas",  "F1",
+                               "F1-score (Imbalance-aware)")
+
+(p_ll | p_roc) / (p_pr | p_f1) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+Cross-validation tuning performance across all candidate configurations, ranked best to worst per metric. XGBoost configurations (blue) achieve lower log-loss and higher ROC-AUC than the elastic net (red) across the tuning landscape, though confidence intervals overlap substantially, indicating the performance advantage is modest rather than decisive.
+
+XGBoost configurations consistently rank above the elastic net on log-loss and ROC-AUC, with plain logistic regression sitting as a single reference point. However, the narrow range across all metrics and the overlapping confidence intervals are the more substantively important observation: no configuration achieves markedly superior discrimination, suggesting the outcome is largely linearly separable given these predictors. The performance gap between XGBoost and the logistic baselines reflects captured interaction structure, but the modest magnitude of that gap is itself a finding worth noting, revisited in Section 7.7.
+
+### 7.4 Final Model Extraction and Test-Set Evaluation
+
+#### 7.4.1 Finalising Best Workflows
+
+The best-performing configuration per model family is selected on the basis of log-loss, the primary tuning metric. Each workflow is finalised with its optimal hyperparameters and refitted on the full training set before evaluation on the held-out test set. Refitting on the full training data rather than a single cross-validation fold ensures the final model has seen the maximum available data, giving a fairer estimate of generalisation performance. The unregularised logistic model has no hyperparameters to finalise and is refitted directly.
+
+```{r}
+#| label: rq2-finalise
+
+best_plain_id <- "base_rec_logistic_plain"
+best_enet_id  <- "base_rec_logistic_enet"
+best_xgb_id   <- "base_rec_xgboost"
+
+final_plain_wflow <- heart_results |>
+  extract_workflow(best_plain_id)
+
+final_enet_wflow <- heart_results |>
+  extract_workflow(best_enet_id) |>
+  finalize_workflow(
+    heart_results |>
+      extract_workflow_set_result(best_enet_id) |>
+      select_best(metric = "mn_log_loss")
+  )
+
+final_xgb_wflow <- heart_results |>
+  extract_workflow(best_xgb_id) |>
+  finalize_workflow(
+    heart_results |>
+      extract_workflow_set_result(best_xgb_id) |>
+      select_best(metric = "mn_log_loss")
+  )
+```
+
+#### 7.4.2 Test-Set Performance Comparison
+
+Both finalised models are evaluated on the held-out test set using `last_fit()`, providing unbiased performance estimates under identical conditions.
+
+```{r}
+#| label: rq2-lastfit
+
+test_results_plain <- last_fit(final_plain_wflow, split = heart_split,
+                                metrics = heart_metrics)
+test_results_enet  <- last_fit(final_enet_wflow,split = heart_split,
+                                metrics = heart_metrics)
+test_results_xgb   <- last_fit(final_xgb_wflow, split = heart_split,
+                                metrics = heart_metrics)
+```
+
+```{r}
+rm(heart_results)
+gc()
+```
+
+```{r}
+#| label: rq2-comparison-table
+
+final_comparison <- bind_rows(
+  test_results_plain |> collect_metrics() |> mutate(model = "Logistic Regression"),
+  test_results_enet  |> collect_metrics() |> mutate(model = "Elastic Net LR"),
+  test_results_xgb   |> collect_metrics() |> mutate(model = "Tuned XGBoost")
+) |>
+  select(model, .metric, .estimate) |>
+  pivot_wider(names_from = .metric, values_from = .estimate) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+final_comparison
+```
+
+The results show near-identical performance across all three models. Log-loss ranges from 0.402 to 0.410, ROC-AUC from 0.840 to 0.842, F1 from 0.301 to 0.303 and PR-AUC 0.347 to 0.353. Rather than a performance disappointment, this near-parity is a substantive finding in its own right: it suggests cardiovascular risk in this population follows a largely additive structure, where clinical and demographic predictors contribute independently rather than through complex conditional relationships. XGBoost's additional capacity to capture interactions does not translate into meaningful discriminative gains, indicating that while interactions may be statistically detectable, they carry limited predictive weight relative to the dominant main effects of age, general health, and cardiometabolic status.
+
+#### 7.4.3 ROC Curve Comparison
+
+Overlaying the test-set ROC curves for both models provides a direct visual comparison of discrimination across all classification thresholds.
+
+```{r}
+#| label: rq2-roc-curves
+#| fig-height: 6
+#| fig-width: 10
+
+all_preds <- bind_rows(
+  test_results_plain |> collect_predictions() |> mutate(model = "Logistic Regression"),
+  test_results_enet  |> collect_predictions() |> mutate(model = "Elastic Net LR"),
+  test_results_xgb   |> collect_predictions() |> mutate(model = "Tuned XGBoost"))
+
+all_preds |>
+  group_by(model) |>
+  roc_curve(HeartDiseaseorAttack, .pred_Yes) |>
+  autoplot() +
+  scale_colour_manual(values = c(
+    "Logistic Regression" = "grey40",
+    "Elastic Net LR"      = "steelblue",
+    "Tuned XGBoost"       = "darkorange"
+  )) +
+  labs(title = "ROC Curves: All Models",
+       x = "1 - Specificity (False Positive Rate)",
+       y = "Sensitivity (True Positive Rate)",
+       colour = "Model") +
+  theme(legend.position = "bottom")
+```
+
+Statistically, all three models achieve equivalent discrimination across the full threshold range, with no model gaining a meaningful sensitivity advantage at any given false positive rate. Substantively, this reinforces the finding from Table 7: the predictive signal in this dataset is largely captured by a linear additive model, and allowing for interaction structure through XGBoost recovers little additional discriminative capacity. For the research question, this suggests that socioeconomic moderation of cardiovascular risk, if present, does not manifest as a pattern strong enough to improve risk ranking at the population level.
+
+#### 7.4.4 Precision–Recall Curve Comparison
+
+Under class imbalance, the PR curve is more informative than the ROC curve, as it directly quantifies the trade-off between identifying true positives and avoiding false alarms without being inflated by the large number of true negatives.
+
+```{r}
+#| label: rq2-pr-curves
+
+all_preds |>
+  group_by(model) |>
+  pr_curve(HeartDiseaseorAttack, .pred_Yes) |>
+  autoplot()  +
+  scale_colour_manual(values = c(
+    "Logistic Regression" = "grey40",
+    "Elastic Net LR"      = "steelblue",
+    "Tuned XGBoost"       = "darkorange"
+  )) +
+  labs(title = "Precision\u2013Recall Curves: All Models",
+       x = "Recall (Sensitivity)",
+       y = "Precision",
+       colour = "Model") +
+  theme(legend.position = "bottom")
+```
+
+All three models achieve near-equivalent PR-AUC, ranging from 0.908 to 0.917, with the elastic net marginally ahead. The curves diverge slightly at very low recall values, where precision drops sharply from around 0.60 to 0.50, but converge and remain indistinguishable beyond that point. Substantively, the consistently declining precision as recall increases reflects the difficulty of identifying heart disease cases in a population where they represent only 9% of observations. No model meaningfully outperforms the others in trading off false positives against false negatives, again consistent with the near-parity finding: the predictive signal is well captured by the additive structure, and allowing for interactions adds little when it comes to locating the minority class specifically.
+
+#### 7.4.5 Confusion Matrix Analysis
+
+Confusion matrices provide class-level detail on how each model allocates predictions, complementing the threshold-independent AUC metrics above.
+
+```{r}
+#| label: rq2-confusion
+#| fig-height: 7
+#| fig-width: 14
+
+
+cm_plain <- test_results_plain |>
+  collect_predictions() |>
+  conf_mat(HeartDiseaseorAttack, .pred_class) |>
+  autoplot(type = "heatmap") +
+  labs(title = "Logistic Regression")
+
+cm_enet <- test_results_enet |>
+  collect_predictions() |>
+  conf_mat(HeartDiseaseorAttack, .pred_class) |>
+  autoplot(type = "heatmap") +
+  labs(title = "Elastic Net LR")
+
+cm_xgb <- test_results_xgb |>
+  collect_predictions() |>
+  conf_mat(HeartDiseaseorAttack, .pred_class) |>
+  autoplot(type = "heatmap") +
+  labs(title = "XGBoost")
+
+cm_plain + cm_enet + cm_xgb
+```
+
+All three models show a similar allocation pattern: true negatives are well captured while false negatives remain high relative to true positives. XGBoost identifies the most true positives (2,907) but also generates the most false positives (5,293), reflecting a marginally more aggressive positive-class decision boundary. The logistic and elastic net models are nearly identical in their allocation, consistent with their equivalent F1 scores in Table 7.
+
+The high false negative counts mean a meaningful proportion of individuals with heart disease would be missed in a screening context. This is a direct consequence of the class imbalance rather than a modelling failure: with only 9% prevalence, the decision boundary sits in a region of genuine population uncertainty. The similarity across all three matrices points again to the additive structure of risk in this population. No model has found a fundamentally different decision boundary, which suggests that the interaction structure XGBoost is capable of recovering does not substantially shift where that boundary falls.
+
+#### 7.4.6 Variable Importance: XGBoost
+
+Gain-based importance ranks predictors by the average improvement in split quality they contribute across all trees.
+
+```{r}
+#| label: rq2-vip
+#| fig-height: 8
+#| fig-width: 12
+
+final_xgb_fit <- extract_fit_parsnip(test_results_xgb)
+
+final_xgb_fit |>
+  vip(num_features = 15, geom = "col",
+      aesthetics = list(fill = "steelblue", colour = "black", alpha = 0.8)) +
+  labs(title    = "Variable Importance: XGBoost",
+       subtitle = "Top 20 predictors ranked by gain",
+       x = "Importance (Gain)")
+```
+
+GenHlth and Age account for the majority of predictive gain, with HighBP and HighChol contributing at considerably lower magnitudes. Income and Education both appear but their gains are negligible relative to the dominant predictors. The large gap between clinical and socioeconomic variables suggests the latter operate through clinical pathways rather than as direct independent contributors to cardiovascular risk, a pattern examined more closely through SHAP interaction analysis in Section 7.6.
+
+------------------------------------------------------------------------
+
+## 7.5 Formal Tests of Socioeconomic Moderation
+
+Before deploying SHAP-based tools, likelihood ratio tests formally assess whether including interaction terms between clinical risk factors and socioeconomic indicators improves model fit over a main-effects baseline.
+
+### 7.5.1 Logistic Regression Interaction Models
+
+To formally evaluate socioeconomic moderation, logistic regression models including interaction terms between key clinical risk factors (HighBP, HighChol, BMI) and socioeconomic indicators (Income and Education) were estimated. These interaction terms allow the association between clinical risk factors and heart disease to vary across socioeconomic strata.
+
+**1. Baseline main-effects model**
+
+```{r}
+#| label: base-rq2
+mod_main <- glm(
+  HeartDiseaseorAttack ~ HighBP + HighChol + BMI +
+    Age + Sex + Income + Education +
+    Smoker + PhysActivity,
+  data = heart_train,
+  family = binomial()
+)
+```
+
+**2. Income interaction model**
+
+```{r}
+#| label: income-inter-rq2
+mod_income <- glm(
+  HeartDiseaseorAttack ~ (HighBP + HighChol + BMI) * Income +
+    Age + Sex + Education +
+    Smoker + PhysActivity,
+  data = heart_train,
+  family = binomial()
+)
+```
+
+**3. Education interaction model**
+
+```{r}
+#| label: edu-inter-rq2
+mod_edu <- glm(
+  HeartDiseaseorAttack ~ (HighBP + HighChol + BMI) * Education +
+    Age + Sex + Income +
+    Smoker + PhysActivity,
+  data = heart_train,
+  family = binomial()
+)
+```
+
+### 7.5.2 Likelihood Ratio Tests
+
+This subsection formally tests whether adding interaction terms **improves model fit** relative to the baseline model.
+
+#### **1. Income moderation test**
+
+```{r}
+anova(mod_main, mod_income, test = "Chisq")
+```
+
+#### **2. Education moderation test**
+
+```{r}
+anova(mod_main, mod_edu, test = "Chisq")
+```
+
+Both interaction blocks produce statistically significant improvements in fit over the additive baseline. The income interaction block (delta chi-squared = 49.4, df = 21, p \< 0.001) and the education interaction block (delta chi-squared = 31.2, df = 15, p = 0.008) indicate that the associations between clinical risk factors and heart disease are not constant across socioeconomic strata.
+
+These results should be interpreted cautiously. With approximately 190,000 training observations the likelihood ratio test has substantial power, meaning even negligible deviations from the additive assumption will achieve significance. The tests confirm that moderation exists but say nothing about its practical magnitude. The deviance reductions themselves are small relative to the residual deviance of 97,130, with the income block accounting for 49 units and the education block for 31 units out of roughly 97,000. Whether these statistically detectable interactions translate into meaningful differences in predicted risk across socioeconomic groups is the question the SHAP analyses in Section 7.6 address directly.
+
+The model including interactions between clinical risk factors and income significantly improved model fit relative to the baseline specification ($Δχ² = 49.40, df = 21, p < 0.001$). Similarly, the model including interactions between clinical predictors and education also produced a statistically significant improvement in fit ($Δχ² = 31.18, df = 15, p = 0.008$). These results indicate that the relationships between key cardiometabolic risk factors and heart disease are not constant across socioeconomic groups. Instead, the strength of these associations varies across levels of income and educational attainment.
+
+However, while statistically significant, these interaction effects should be interpreted with caution. Given the large sample size of the dataset (approximately 190,000 observations), even relatively small deviations from the additive model can produce statistically significant likelihood ratio tests. As such, the presence of moderation should be interpreted as evidence that socioeconomic position contributes to heterogeneity in the association between clinical risk factors and heart disease risk, rather than as evidence of large effect modification.
+
+To further explore the structure and magnitude of these interaction effects in a more flexible modelling framework, the following section uses SHAP-based interpretation of the XGBoost model to examine how predicted contributions of clinical risk factors vary across socioeconomic strata.
+
+### 7.6 SHAP-Based Model Interpretation
+
+The likelihood ratio tests provide formal evidence that interaction effects are present. SHAP-based interpretation of the final XGBoost model is used to explore whether these interactions are practically meaningful and to characterise the structure of socioeconomic moderation in a non-linear setting.
+
+```{r}
+#| label: rq2-shap-load
+
+# xgb_engine <- extract_fit_engine(final_xgb_fit)
+# 
+# test_processed <- bake(
+#   prep(extract_preprocessor(final_xgb_wflow)),
+#   new_data = testing(heart_split)
+# )
+# X <- test_processed |> select(-HeartDiseaseorAttack) |> as.matrix()
+# set.seed(123)
+# X_sample <- X[sample(nrow(X), 10000), ]
+# shp <- shapviz(xgb_engine, X_pred = X_sample)
+# write_rds(shp, "shp_rq2.rds")
+
+shp <- read_rds("shp_rq2.rds")
+```
+
+#### 7.6.1 Global Feature Importance (SHAP)
+
+```{r}
+#| label: rq2-shap-importance
+#| fig-height: 7
+#| fig-width: 12
+
+sv_importance(shp, kind = "bar", max_display = 15) +
+  labs(title = "SHAP Feature Importance",
+       x     = "Mean |SHAP Value|")
+```
+
+Age ranks as the single most influential predictor, followed by general health status, high blood pressure, and high cholesterol. Income appears in the middle of the ranking, contributing meaningfully less than the dominant clinical predictors but more than Education, which sits near the bottom alongside BMI and mental health. This ordering is consistent with the LRT findings: socioeconomic factors retain detectable associations with cardiovascular risk but are substantially outweighed by clinical and demographic variables. The gap between Income and Education is also notable and will be examined further in the interaction analyses.
+
+#### 7.6.2 Distribution of Feature Effects (Beeswarm Plot)
+
+```{r}
+#| label: rq2-beeswarm
+#| fig-height: 7
+#| fig-width: 14
+
+sv_importance(shp, kind = "beeswarm", max_display = 15) +
+  labs(title = "SHAP Beeswarm: Distribution of Feature Effects")
+```
+
+Age shows the widest spread of any predictor, with younger individuals (purple) receiving large negative SHAP values and older individuals (orange) receiving large positive ones, confirming a strong monotonic relationship with cardiovascular risk. GenHlth follows a similar directional pattern, with poorer health (higher values, orange) consistently pushing predictions upward. HighBP and HighChol show clean binary splits: presence of each condition shifts predictions positively while absence shifts them negatively, with little overlap between the two clusters.
+
+Income displays a notably asymmetric distribution, with low-income individuals (purple) contributing modest positive SHAP values and high-income individuals (orange) contributing negative ones, indicating a protective effect of higher income that is directionally consistent but small in magnitude. Education shows a similar but even weaker pattern, with distributions tightly centred around zero. Both socioeconomic variables lack the clean directional separation seen in the clinical predictors, reinforcing that their contribution is secondary and largely absorbed by the dominant cardiometabolic factors in this model.
+
+#### 7.6.3 Global Interaction Strengths
+
+SHAP interaction values decompose each prediction into pairwise interaction contributions, separating the portion of a feature's effect that is conditional on another feature from its pure main effect. This allows the overall interaction structure of the model to be assessed before examining specific predictor pairs in detail.
+
+```{r}
+#| label: rq2-shap-interact
+
+
+if (!file.exists("shp_i.rds")) {
+  shp_i <- shapviz(xgb_engine, X_pred = X_sample, interactions = TRUE)
+  write_rds(shp_i, "shp_i.rds")
+}
+shp_i <- read_rds("shp_i.rds")
+```
+
+```{r}
+#| label: rq2-interact-plot
+#| fig-height: 8
+#| fig-width: 16
+
+sv_interaction(shp_i)
+```
+
+Most pairwise interaction values are tightly concentrated around zero, indicating the model's predictive signal is predominantly additive. The Age-GenHlth pair shows the largest off-diagonal spread, suggesting that age-related risk is not entirely independent of general health burden, older individuals in poor health carry disproportionately elevated risk beyond what either predictor contributes alone. HighBP and HighChol show modest interactions with each other, consistent with their tendency to co-occur in cardiometabolic risk profiles documented in the EDA.
+
+Notably, Income and Education do not appear among the top predictors in this matrix, which itself reflects their lower global importance. The interaction analyses in Sections 7.6.4 and 7.6.5 examine their pairwise interactions with clinical predictors directly. The overall picture here is consistent with the near-parity finding from Section 7.4: a largely additive risk structure where the dominant predictors contribute mostly independently rather than through complex conditional relationships.
+
+#### 7.6.4 Targeted Dependence Analysis: Income Interactions
+
+Having established the global interaction structure, targeted dependence plots examine whether income moderates the contribution of specific clinical predictors. Each plot shows the interaction SHAP value between a clinical predictor and income, with points coloured by income level. Vertical spread within a given feature value indicates that income is modifying the clinical predictor's contribution to predicted risk.
+
+```{r}
+#| label: rq2-depend-income
+#| fig-height: 7
+#| fig-width: 14
+
+p_inc_bp <- sv_dependence(shp_i, v = "HighBP_High",
+                           color_var = "Income", interactions = TRUE) +
+  labs(title = "High Blood Pressure \u00d7 Income",
+       x = "HighBP (0 = absent, 1 = present)",
+       y = "Interaction SHAP Value")
+
+p_inc_chol <- sv_dependence(shp_i, v = "HighChol_High",
+                             color_var = "Income", interactions = TRUE) +
+  labs(title = "High Cholesterol \u00d7 Income",
+       x = "HighChol (0 = absent, 1 = present)",
+       y = "Interaction SHAP Value")
+
+p_inc_gen <- sv_dependence(shp_i, v = "GenHlth",
+                            color_var = "Income", interactions = TRUE) +
+  labs(title = "General Health \u00d7 Income",
+       x = "General Health (1 = excellent, 5 = poor)",
+       y = "Interaction SHAP Value")
+
+p_inc_bmi <- sv_dependence(shp_i, v = "BMI",
+                            color_var = "Income", interactions = TRUE) +
+  labs(title = "BMI \u00d7 Income",
+       x = "BMI (standardised)",
+       y = "Interaction SHAP Value")
+
+(p_inc_bp | p_inc_chol) / (p_inc_gen | p_inc_bmi)
+```
+
+For high blood pressure and high cholesterol, the interaction SHAP values are small in magnitude (roughly -0.025 to +0.025) and the income colour gradient shows no systematic vertical separation within either cluster. Whether a person is high or low income, the model assigns near-identical interaction adjustments conditional on blood pressure or cholesterol status. Income does not meaningfully moderate the contribution of these two clinical indicators.
+
+The general health plot tells a different story. Interaction values are larger in magnitude, particularly at excellent health levels (1 and 2), where low-income individuals (purple) receive notably higher positive interaction SHAP values than high-income individuals (orange). This suggests that among individuals reporting good health, lower income amplifies cardiovascular risk beyond what general health status alone would predict, consistent with restricted access to preventive care masking underlying risk in lower-income groups. The effect attenuates at poorer health levels where the main effect of GenHlth dominates regardless of income.
+
+BMI shows modest income interaction at higher BMI values, with low-income individuals carrying slightly elevated interaction contributions, though the spread is wide and the pattern less consistent than for general health.
+
+#### 7.6.5 Targeted Dependence Analysis: Education Interactions
+
+The same approach is applied to educational attainment, assessing whether education level modifies the contribution of clinical predictors in the same way income does. Given the weaker global importance of education relative to income seen in Section 7.6.1, these plots test whether education operates through interaction pathways that its main effect ranking would otherwise obscure.
+
+```{r}
+#| label: rq2-depend-edu
+#| fig-height: 7
+#| fig-width: 14
+
+p_edu_bp <- sv_dependence(shp_i, v = "HighBP_High",
+                           color_var = "Education", interactions = TRUE) +
+  labs(title = "High Blood Pressure \u00d7 Education",
+       x = "HighBP (0 = absent, 1 = present)",
+       y = "Interaction SHAP Value")
+
+p_edu_chol <- sv_dependence(shp_i, v = "HighChol_High",
+                             color_var = "Education", interactions = TRUE) +
+  labs(title = "High Cholesterol \u00d7 Education",
+       x = "HighChol (0 = absent, 1 = present)",
+       y = "Interaction SHAP Value")
+
+p_edu_gen <- sv_dependence(shp_i, v = "GenHlth",
+                            color_var = "Education", interactions = TRUE) +
+  labs(title = "General Health \u00d7 Education",
+       x = "General Health (1 = excellent, 5 = poor)",
+       y = "Interaction SHAP Value")
+
+p_edu_bmi <- sv_dependence(shp_i, v = "BMI",
+                            color_var = "Education", interactions = TRUE) +
+  labs(title = "BMI \u00d7 Education",
+       x = "BMI (standardised)",
+       y = "Interaction SHAP Value")
+
+(p_edu_bp | p_edu_chol) / (p_edu_gen | p_edu_bmi)
+```
+
+The education interaction plots are broadly weaker than their income counterparts. High blood pressure and high cholesterol show no systematic colour separation within either cluster, with interaction values ranging narrowly around zero regardless of education level. Educational attainment does not appear to modify the contribution of these clinical indicators in any consistent direction.
+
+The general health plot shows some vertical spread, particularly at excellent health levels (1 and 2) where lower education individuals (purple) receive modestly elevated positive interaction values, mirroring the income pattern from 7.6.4 but at smaller magnitudes. At poor health levels (4 and 5) the pattern reverses slightly, with lower education associated with negative interaction adjustments, though the spread is wide enough that this should be interpreted cautiously.
+
+BMI shows a modest pattern where lower education individuals at higher BMI values receive slightly more negative interaction adjustments, but again the scatter is considerable and no clean gradient is visible.
+
+Overall, education operates as a weaker moderator of clinical cardiovascular risk than income across all four clinical predictors examined. The statistically significant education interaction block detected in the LRT (Section 7.5.2) is likely driven by the large sample size rather than a practically meaningful moderation effect.
+
+#### 7.6.6 Local Explanations
+
+Individual-level SHAP waterfall plot decompose two contrasting predictions, the highest and lowest-risk individuals in the test sample, into their feature-level contributions. This provides a concrete illustration of how the global patterns identified in Sections 7.6.1 to 7.6.5 manifest at the level of a single individual.
+
+```{r}
+#| label: rq2-local
+#| fig-height: 6
+#| fig-width: 12
+
+low_risk_idx  <- which.min(rowSums(as.matrix(shp$S)))
+high_risk_idx <- which.max(rowSums(as.matrix(shp$S)))
+
+w1 <- sv_waterfall(shp, row_id = high_risk_idx) +
+  labs(title    = "Highest-Risk Individual",
+       subtitle = "Features pushing prediction above baseline",
+       x = "SHAP Contribution (log-odds)")
+
+w2 <- sv_waterfall(shp, row_id = low_risk_idx) +
+  labs(title    = "Lowest-Risk Individual",
+       subtitle = "Features pushing prediction below baseline",
+       x = "SHAP Contribution (log-odds)")
+
+w1 | w2
+```
+
+The highest-risk individual accumulates a prediction of f(x) = 2.0, driven almost entirely by poor general health (GenHlth = 5, +0.913) and older age (Age = 12, +0.562). Male sex, difficulty walking, high blood pressure, diabetes, and high cholesterol contribute additively at smaller magnitudes. Notably, smoking absence (Smoker_No = 0) provides a modest negative adjustment, but is insufficient to offset the clinical risk load. Income does not appear among the named features, consistent with its secondary role identified throughout the global analyses.
+
+The lowest-risk individual reaches f(x) = -5.36, the largest protective contributions coming from young age (Age = 1, -1.65) and excellent self-reported health (GenHlth = 1, -0.771), followed by the absence of high blood pressure (-0.481) and high cholesterol (-0.304). High income (Income = 8) appears explicitly in this profile as a contributing protective factor, though its contribution is small relative to the dominant clinical and demographic features. This pattern directly reflects the RQ finding: socioeconomic position contributes to cardiovascular risk profiles but operates as a secondary adjustment around a core of clinical and demographic determinants.
+
+### 7.7 Summary and Conclusions
+
+**Overall Answer**
+
+**Highest- and lowest-risk profiles.** Cardiovascular risk in this population is primarily defined by a compact set of clinical and demographic predictors. The highest-risk profiles combine older age, poor self-reported general health, high blood pressure, high cholesterol, male sex, and comorbid diabetes, with these factors contributing largely independently rather than through complex interactions. The lowest-risk profiles are defined by their absence, with young age and excellent general health providing the strongest protective signal, and higher income contributing a modest additional adjustment.
+
+**Socioeconomic independence.** Socioeconomic factors retain statistically detectable independent associations with cardiovascular risk after adjusting for clinical and behavioural predictors. Income shows a stronger and more consistent association than education across both the logistic regression analysis and SHAP-based interpretation. However, both contribute at substantially lower magnitudes than the dominant clinical predictors, and the near-identical performance of linear and non-linear models across all test-set metrics confirms that the risk structure is largely additive.
+
+**Socioeconomic moderation.** The interaction analyses provide qualified support for the moderation hypothesis: income amplifies risk modestly among individuals reporting intermediate general health, consistent with socioeconomic disadvantage compounding clinical risk where preventive care access is most consequential. Education shows a weaker and less consistent moderation pattern, and its statistically significant interaction block is likely attributable to the large sample size rather than a practically meaningful effect.
+
+**Direct answer.** Socioeconomic position contributes independently to cardiovascular risk but does so as a secondary layer around a dominant cardiometabolic core. The association is slightly more pronounced among individuals with intermediate rather than high clinical risk burden, though the magnitude is small enough that it would not meaningfully alter population-level risk stratification.
+
+
+
