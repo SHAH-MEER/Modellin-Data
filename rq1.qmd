@@ -1,6 +1,10 @@
 ---
+title: "Modelling Health Indicators"
+subtitle: "MA7442 Modelling Data — Assessment 1 (Task 2)"
+author: "Student ID: 259043528"
+date: "2026-03-02"
 format:
-  html:
+  pdf:
     geometry:
       - top=2cm
       - bottom=2cm
@@ -8,6 +12,7 @@ format:
       - right=1.5cm
     documentclass: article
     df-print: kable
+bibliography: references.bib
 ---
 
 ```{r}
@@ -16,30 +21,46 @@ format:
 #| warning: false
 #| include: false
 
-# Packages
+# Core framework
 library(tidymodels)
 library(tidyverse)
+
+# Data exploration
 library(skimr)
 library(scales)
-library(patchwork)
-library(viridis)
+
+# Workflow utilities
 library(workflowsets)
 library(finetune)
-library(probably)
-library(rcompanion)
 library(themis)
-library(ranger)
-library(vip)
-library(shapviz)
-library(knitr)
 library(probably)
 library(conflicted)
-library(doParallel)
+
+# Visualisation
+library(viridis)
+library(patchwork)
+library(vip)
+
+# Model engines
+library(ranger)
+
+# Model interpretability
+library(shapviz)
+
+# Statistical modelling
+library(MASS)
 library(pscl)
 library(lmtest)
-library(marginaleffects)   
+library(marginaleffects)
 library(ggeffects)
-library(MASS)
+library(rcompanion)
+
+# Parallel processing
+library(doParallel)
+
+# Reporting
+library(knitr)
+library(kableExtra)
 
 tidymodels_prefer(quiet = TRUE)
 conflicts_prefer(yardstick::accuracy)
@@ -49,7 +70,7 @@ conflicts_prefer(yardstick::accuracy)
 ```{r}
 #| include: false
 # Plot format and dimension
-knitr::opts_chunk$set(dev = "svg")
+knitr::opts_chunk$set(dev = "cairo_pdf")
 knitr::opts_chunk$set(fig.width = 14, fig.height = 7)
 knitr::opts_chunk$set(
   warning = FALSE,
@@ -60,15 +81,15 @@ knitr::opts_chunk$set(
 theme_set(
   theme_classic(base_size = 16) +
     theme(
-      plot.title    = element_text(size = 20, face = "bold"),
-      axis.title    = element_text(size = 18),
-      axis.text     = element_text(size = 14),
+      plot.title = element_text(size = 20, face = "bold"),
+      axis.title = element_text(size = 18),
+      axis.text  = element_text(size = 14),
       legend.title  = element_text(size = 13),
-      legend.text   = element_text(size = 12),
-      strip.text    = element_text(face = "bold", size = 14),
+      legend.text = element_text(size = 12),
+      strip.text = element_text(face = "bold", size = 14),
       legend.background = element_rect(
-        colour    = "black",
-        fill      = "white",
+        colour = "black",
+        fill = "white",
         linewidth = 0.5
       )
     )
@@ -259,7 +280,7 @@ rec_rq1 |>
 We now define the candidate models for RQ1 using the **tidymodels** framework. Each model is specified independently of preprocessing and will later be combined with the common recipe using **workflows** and **workflow sets**.
 
 | Model | Type | Primary Function | Key Strengths |
-|------------------|------------------|------------------|------------------|
+|----|----|----|----|
 | **Multinomial Logistic Regression** | Parametric | Linear Baseline | Interpretable log-odds; direct coefficient analysis |
 | **Regularised Multinomial (glmnet)** | Parametric (Penalised) | Regularisation Path | Elastic net penalty shrinks redundant predictors; covers ridge, lasso and elastic net via `mixture` tuning |
 | **Random Forest** | Ensemble (Bagging) | Non-linear Discovery | Captures complex interactions; robust to multicollinearity |
@@ -320,7 +341,7 @@ mod_mlp <-
 
 ### 6.3.4 Workflow Set Construction
 
-We now integrate the RQ1 preprocessing recipe with all five candidate model specifications. Each workflow represents one model-preprocessing pair, and the workflow set enables parallel evaluation under identical resampling conditions. Custom tuning grids are attached via `option_add()` for MLP and RBF SVM, overriding the default space-filling design for those models with constrained parameter ranges appropriate to their respective architectures.
+We now integrate the RQ1 preprocessing recipe with all five candidate model specifications. Each workflow represents one model-preprocessing pair, and the workflow set enables parallel evaluation under identical resampling conditions. Custom tuning grids are attached via `option_add()` for Regularized GLMnet, XGBoost, Random Forest and MLP, overriding the default space-filling design for those models with constrained parameter ranges appropriate to their respective architectures.
 
 ```{r}
 #| label: wrkflw-sets
@@ -401,7 +422,7 @@ metrics_diab <-
 
 Hyperparameter optimisation is performed using `tune_race_anova`, which eliminates underperforming configurations early based on interim fold results, enabling efficient exploration of larger grid sizes without fitting all configurations to completion:
 
--   **Grid size** — 15 configurations per model, with space-filling designs via `grid_space_filling()` for MLP and RBF SVM to constrain the search to empirically sensible parameter regions. Multinomial logistic regression requires no tuning. The total maximum fit count is 5 models × 15 grids × 5 CV folds = 375 fits, reduced in practice by early elimination.
+-   **Grid size** — 30-50 configurations per model, with space-filling designs via `grid_space_filling()` for MLP and RBF SVM to constrain the search to empirically sensible parameter regions. Multinomial logistic regression requires no tuning. The total maximum fit count is 5 models × 15 grids × 5 CV folds = 375 fits, reduced in practice by early elimination.
 
 -   **Search method** — `tune_race_anova` uses ANOVA-based interim testing across folds to identify and discard configurations that are statistically unlikely to be competitive, substantially reducing computation relative to full grid search while retaining systematic coverage of the parameter space.
 
@@ -530,13 +551,25 @@ m4 <- pretty_autoplot(
   theme(legend.position = "bottom")
 ```
 
-**ROC-AUC** XGBoost achieves the single best discrimination score at approximately 71.2%, appearing as the top-ranked workflow. MLP configurations dominate ranks 2 through 9, clustered tightly between 70.4% and 70.8%, indicating consistently strong discriminative ability across hyperparameter configurations. Random Forest occupies the middle range, while Elastic Net and Multinomial configurations occupy the lower ranks, both performing comparably to each other at around 70.0–70.2%. Overall discrimination differences across models are modest, spanning less than 1.5 percentage points across all 28 workflows.
+```{r}
+#| label: rankings-rq1-table
+#| message: false
+#| warning: false
+wf_set_rq1_fit |>
+  collect_metrics() |>
+  filter(.metric %in% c("roc_auc", "bal_accuracy", "f_meas", "mn_log_loss")) |>
+  group_by(wflow_id, .metric) |>
+  summarise(mean_val = mean(mean, na.rm = TRUE)) |>
+  arrange(.metric, desc(mean_val))
+```
 
-**Balanced Accuracy** The pattern closely mirrors ROC-AUC. XGBoost again achieves the single highest balanced accuracy at approximately 62.8%, with MLP configurations filling the top cluster. Random Forest sits in the middle, and both parametric models (Elastic Net and Multinomial) perform comparably in the lower range around 61.5–61.8%. The separation between MLP and the parametric models is more visible here than in ROC-AUC, suggesting MLP has a meaningful advantage in recovering minority class recall.
+**ROC-AUC** XGBoost achieves the best CV discrimination at approximately 70.7%, with Random Forest close behind at 70.3%. Multinomial, MLP, and Elastic Net cluster tightly between 70.0% and 70.1%, indicating near-equivalent discriminative ability across parametric and neural network approaches. Overall differences span less than one percentage point across all workflows, suggesting model family has limited impact on raw discrimination under the resampled training distribution.
 
-**Macro F1** The top ranks are shared between XGBoost, MLP, and Random Forest, all clustering tightly around 69.5–70.0%. Elastic Net and Multinomial follow closely behind at approximately 68.5–69.0%. Two MLP configurations at the bottom right show dramatically wider confidence intervals and substantially lower F1 scores, indicating failed convergence for those specific hyperparameter combinations, these are outliers attributable to training instability rather than model family weakness.
+**Balanced Accuracy** XGBoost leads at 62.7%, with MLP close behind at 62.6%, the two are effectively tied. Random Forest sits in the middle at 62.1%, while Elastic Net and Multinomial occupy the lower range at 61.5% and 61.6% respectively. The parametric models show a consistent deficit relative to the ensemble approaches across this metric.
 
-**Calibration (Log-loss)** This panel shows the starkest separation. XGBoost and Elastic Net achieve the best calibrated probability estimates, with the single best XGBoost configuration reaching approximately 0.570 and Elastic Net configurations clustered just above at 0.575–0.590. Multinomial follows closely, performing nearly identically to Elastic Net, confirming that regularisation adds minimal additional calibration benefit over the unpenalised baseline in this dataset. Random Forest sits slightly above at approximately 0.595. MLP configurations are clearly the worst calibrated by a large margin, clustered around 0.840, indicating that despite strong discrimination performance, MLP produces overconfident and poorly calibrated class probability estimates.
+**Macro F1** The ranking inverts notably here. Random Forest achieves the highest macro F1 at 67.6%, followed by Multinomial and Elastic Net at 66.8% and 66.7% respectively. XGBoost drops to fourth at 58.8%, and MLP performs poorly at 45.3%, indicating that despite reasonable discrimination and balanced accuracy, both models struggle with class-balanced precision-recall tradeoffs under the true class distribution. This divergence between ROC-AUC and macro F1 warrants attention and suggests the both models are optimising discrimination at the expense of minority class precision.
+
+**Calibration (Log-loss)** This panel shows the starkest separation. XGBoost achieves the best calibration at 0.437, followed by Random Forest at 0.446. Elastic Net and Multinomial perform nearly identically at approximately 0.463, confirming that ridge regularisation adds minimal calibration benefit over the unpenalised baseline. MLP is clearly the worst calibrated by a substantial margin at 0.785, indicating that despite reasonable discrimination and balanced accuracy, MLP produces systematically overconfident class probability estimates across cross-validation folds.
 
 ### 6.3.6 Extract tuning results
 
@@ -548,36 +581,77 @@ Cross-validation performance provides a useful guide for hyperparameter selectio
 rf_res  <- extract_workflow_set_result(wf_set_rq1_fit, "rq1_recipe_rf")
 xgb_res <- extract_workflow_set_result(wf_set_rq1_fit, "rq1_recipe_xgb")
 mlp_res <- extract_workflow_set_result(wf_set_rq1_fit, "rq1_recipe_mlp")
-glmnet_res  <- extract_workflow_set_result(wf_set_rq1_fit, "rq1_recipe_glmnet")
+glmnet_res <- extract_workflow_set_result(wf_set_rq1_fit, "rq1_recipe_glmnet")
 # Note: multinomial has no tuning parameters, so no extraction needed
 
+```
+
+**Best Hyperparameters Per Model**
+
+```{r}
+#| label: rq1-hyperparameter-tables
+
+hp_result <- bind_rows(
+  rf_res |> select_best(metric = "mn_log_loss") |> 
+    mutate(Model = "Random Forest"),
+  xgb_res |> select_best(metric = "mn_log_loss") |> 
+    mutate(Model = "XGBoost"),
+  mlp_res |> select_best(metric = "mn_log_loss") |> 
+    mutate(Model = "MLP"),
+  glmnet_res |> select_best(metric = "mn_log_loss") |> 
+    mutate(Model = "Elastic Net")
+  ) |>
+  select(Model, mtry, min_n, tree_depth, learn_rate, loss_reduction,
+         hidden_units, penalty, mixture, epochs)
+```
+
+```{r}
+#| echo: false
+hp_result |>
+  kable(digits  = 4,
+    caption = "Optimal hyperparameters per model selected by minimum mean log-loss across 5-fold CV. Empty cells indicate parameters not applicable to the given model.",
+    na = ""
+  ) |>
+  kable_styling(full_width = FALSE) |>
+  column_spec(1, bold = TRUE)
+```
+
+```{r}
+#| label: select-best-models
 # Using mn_log_loss as the primary optimization metric 
 best_rf <- select_best(rf_res, metric = "mn_log_loss")
 best_xgb <- select_best(xgb_res, metric = "mn_log_loss")
 best_mlp <- select_best(mlp_res, metric = "mn_log_loss")
 best_glmnet <- select_best(glmnet_res, metric = "mn_log_loss")
-
 ```
 
 ```{r}
 #| label: final-wrkflows
 
 # These contain the recipe and model specification without fitted parameters
-rf_wf      <- extract_workflow(wf_set_rq1_fit, "rq1_recipe_rf")
-xgb_wf     <- extract_workflow(wf_set_rq1_fit, "rq1_recipe_xgb")
-mlp_wf     <- extract_workflow(wf_set_rq1_fit, "rq1_recipe_mlp")
+rf_wf <- extract_workflow(wf_set_rq1_fit, "rq1_recipe_rf")
+xgb_wf <- extract_workflow(wf_set_rq1_fit, "rq1_recipe_xgb")
+mlp_wf <- extract_workflow(wf_set_rq1_fit, "rq1_recipe_mlp")
 glmnet_wf  <- extract_workflow(wf_set_rq1_fit, "rq1_recipe_glmnet")
 multinom_wf <- extract_workflow(wf_set_rq1_fit, "rq1_recipe_multinom")
 
 
 # This creates finalized workflows ready for last-fit on full dataset
 rf_final_wf <- finalize_workflow(rf_wf, best_rf)
-xgb_final_wf  <- finalize_workflow(xgb_wf, best_xgb)
+xgb_final_wf <- finalize_workflow(xgb_wf, best_xgb)
 mlp_final_wf <- finalize_workflow(mlp_wf, best_mlp)
 glmnet_final_wf  <- finalize_workflow(glmnet_wf, best_glmnet)
 # Multinomial has no tuning parameters, so original workflow is already finalized
 multinom_final_wf <- multinom_wf
 
+```
+
+```{r}
+#| label: remove-the wrkflw-set
+#| include: false
+
+rm(wf_set_rq1_fit)
+gc()
 ```
 
 ```{r}
@@ -630,39 +704,6 @@ pred_mn <- multinom_final_fit |>
 
 pred_all <- bind_rows(pred_rf, pred_xgb, pred_mlp, pred_glmnet, pred_mn) |>
   rename(.pred_No_diabetes = `.pred_No diabetes`)
-```
-
-```{r}
-#| label: rq1-test-metrics
-#| message: false
-#| warning: false
-
-metrics_rf <- rf_final_fit |> 
-  collect_metrics() |> 
-  mutate(model = "Random Forest")
-
-metrics_xgb <- xgb_final_fit |>
-  collect_metrics() |> 
-  mutate(model = "XGBoost")
-
-metrics_mlp <- mlp_final_fit |> 
-  collect_metrics() |> mutate(model = "MLP")
-
-metrics_glmnet <- 
-  glmnet_final_fit  |> 
-  collect_metrics() |> 
-  mutate(model = "Elastic Net")
-metrics_mn <- 
-  multinom_final_fit |> 
-  collect_metrics() |> 
-  mutate(model = "Multinomial")
-
-metrics_all <- 
-  bind_rows(metrics_rf, metrics_xgb, metrics_mlp, metrics_glmnet, metrics_mn)
-
-metrics_all |>
-  select(model, .metric, .estimate) |>
-  pivot_wider(names_from = .metric, values_from = .estimate)
 ```
 
 ### 6.4.1 ROC Curves
@@ -751,25 +792,87 @@ p_cm_glmnet  <- plot_cm(pred_glmnet, "Elastic Net")
   plot_layout(guides = "collect")
 ```
 
-The confusion matrices reveal notable differences in classification behaviour across the three models.
+All five models achieve high correct classification rates for the No diabetes class, reflecting its 84% prevalence dominance in the test set. For the Diabetes class, all models correctly identify several thousand cases, though misclassification between Diabetes and No diabetes persists throughout.
 
-The **multinomial logistic regression model** is the only model that correctly identifies a meaningful number of **prediabetes cases** (150 observations). In contrast, both **XGBoost and random forest completely fail to predict the prediabetes class**, assigning all observations in this category to either the no-diabetes or diabetes classes. This indicates that the tree-based models effectively collapse the problem into a two-class classification task, ignoring the intermediate category.
+The critical finding is Prediabetes classification. Four of the five models, XGBoost, Random Forest, Multinomial Logistic Regression, and Elastic Net, predict zero Prediabetes cases, effectively collapsing the problem into a binary task. MLP is the sole exception, producing a marginal but non-zero number of Prediabetes predictions, suggesting its probability estimates are structurally more dispersed than the tree-based and parametric alternatives. This collapse is not attributable to modelling failure but to the structural near-inseparability of Prediabetes at population prevalence, as documented in Section 6.5.
 
-For the **no-diabetes class**, all three models achieve high numbers of correct predictions due to the dominance of this category in the dataset. However, the multinomial model shows slightly higher correct classifications than the boosted tree model.
+### 6.4.3 Class-wise Performance
 
-For the **diabetes class**, all models correctly identify several thousand cases, though misclassification between diabetes and no-diabetes remains present across all models.
+While ROC-AUC provides an aggregate discrimination summary, it obscures class-specific classification behaviour. The heatmap below disaggregates precision and recall across all three outcome classes and five models, directly exposing where each model succeeds and fails at the individual class level.
 
-Overall, the multinomial model demonstrates a **more balanced classification behaviour**, particularly by retaining predictive capacity for the minority prediabetes class.
+```{r}
+#| label: classwise-prep
+#| include: false
+make_binary <- function(x, pos) {
+  factor(ifelse(x == pos, pos, "Other"), levels = c(pos, "Other"))
+}
 
-**Overall Assessment**
+classwise_metrics <- pred_all |>
+  group_by(model) |>
+  summarise(
+    precision_no   = precision_vec(Diabetes, .pred_class, event_level = "first"),
+    recall_no = recall_vec(Diabetes, .pred_class, event_level = "first"),
+    precision_pre  = precision_vec(make_binary(Diabetes, "Prediabetes"),
+                                   make_binary(.pred_class, "Prediabetes")),
+    recall_pre = recall_vec(make_binary(Diabetes, "Prediabetes"),
+                                make_binary(.pred_class, "Prediabetes")),
+    precision_diab = precision_vec(make_binary(Diabetes, "Diabetes"),
+                                   make_binary(.pred_class, "Diabetes")),
+    recall_diab = recall_vec(make_binary(Diabetes, "Diabetes"),
+                                make_binary(.pred_class, "Diabetes"))
+  ) |>
+  pivot_longer(
+    cols      = -model,
+    names_to  = c("metric", "class"),
+    names_sep = "_",
+    values_to = "value"
+  ) |>
+  mutate(
+    class  = case_when(
+      class == "no"   ~ "No diabetes",
+      class == "pre"  ~ "Prediabetes",
+      class == "diab" ~ "Diabetes"),
+    metric = str_to_title(metric))
+```
 
-Although gradient boosting and random forest performed competitively during cross-validation, the held-out test set evaluation suggests that **multinomial logistic regression** provides the most balanced performance across classes. In particular, it is the only model capable of correctly identifying prediabetes cases while maintaining strong discrimination for the other two classes.
+```{r}
+#| label: rq1-classwise-heatmap
+#| message: false
+#| warning: false
+#| fig-height: 6
+#| fig-width: 12
 
-## **6.5 Threshold Adjustment for Prediabetes Recovery**
+classwise_metrics |>
+  ggplot(aes(x = class, y = model, fill = value)) +
+  geom_tile(colour = "white", linewidth = 0.5) +
+  geom_text(aes(label = percent(value, accuracy = 0.1)),
+            size = 3, colour = "white") +
+  facet_wrap(~ metric) +
+  scale_fill_viridis_c(
+    option  = "D",
+    limits  = c(0, 1),
+    labels  = percent_format()) +
+  labs(
+    title = "Class-wise precision and recall by model",
+    x     = NULL,
+    y     = NULL,
+    fill  = NULL
+  ) +
+  theme(
+    legend.position = "bottom")
+```
+
+The heatmap exposes the binary collapse documented in Section 6.4.2 in quantitative terms. Prediabetes precision is undefined (grey) for all models except MLP, which achieves 0.0%, confirming that no model produces a single correctly classified Prediabetes case with meaningful confidence. Prediabetes recall is 0.0% across all five models without exception.
+
+For No diabetes, precision is consistently strong across all models at 65-66%, with the exception of MLP which drops to 44.1%, reflecting its tendency to misclassify No diabetes observations as Prediabetes. For the Diabetes class, precision sits at 41-43% across all models, moderate but consistent, with recall in the 44-50% range, indicating that roughly half of true Diabetes cases are missed and misclassified as No diabetes.
+
+The overall picture confirms that all five models effectively operate as binary classifiers on this test set, distinguishing No diabetes from Diabetes with moderate success while failing entirely on the intermediate Prediabetes class.
+
+## 6.5 Threshold Adjustment for Prediabetes Recovery
 
 The confusion matrices presented in Section 6.4.2 revealed a consistent failure across all five models to predict Prediabetes at the default 0.5 classification threshold. As established in Section 6.3.1, the held-out test set reflects the true population distribution of 1.8% Prediabetes, a prevalence so low that posterior class probabilities rarely exceed the default boundary. The ROC-AUC results of approximately 0.82 across all models confirm that genuine discriminative signal exists, the models are producing meaningful Prediabetes probability estimates, but these are structurally suppressed below the decision threshold. This section investigates whether threshold adjustment can recover Prediabetes predictions and, if not, characterises the nature of the separability failure.
 
-### 6.4.3 Calibration Plot
+### 6.5.1 Calibration Plot
 
 ```{r}
 #| label: calibration-plot
@@ -813,13 +916,13 @@ p_cal_glmnet <- cal_plot(pred_all, "Elastic Net")
 
 **Random Forest:** Shows a smooth but steep decline, with reasonably consistent overconfidence across the probability range.
 
-**Multinomial and Elastic Net:** Nearly identical in behaviour, both showing high event rates at low predicted probabilities. This confirms that lasso regularisation did not meaningfully alter calibration behaviour relative to the unpenalised baseline.
+**Multinomial and Elastic Net:** Nearly identical in behaviour, both showing high event rates at low predicted probabilities. This confirms that Ridge regularisation did not meaningfully alter calibration behaviour relative to the unpenalised baseline.
 
 **MLP:** Shows the widest confidence intervals, reflecting instability consistent with its poor log-loss performance in Section 6.4.
 
 The key takeaway is that all models are producing genuine Prediabetes signal at probabilities well below 0.5, warranting further investigation of the probability distributions before any threshold decision is made.
 
-### **6.5.2 Predicted Probability Distribution**
+### 6.5.2 Predicted Probability Distribution
 
 Before selecting adjusted thresholds, the distribution of predicted Prediabetes probabilities is examined across true Prediabetes cases only, to identify where signal is concentrated and confirm that meaningful probability mass exists below the default threshold.
 
@@ -849,7 +952,7 @@ pred_all |>
 
 > The distributions confirm that genuine Prediabetes signal exists across all models but is concentrated at probability values well below the default 0.5 threshold. For tree-based and parametric models, the required threshold to recover any meaningful Prediabetes predictions would fall in the 5–10% range, a region so low that it overlaps heavily with the probability mass of No diabetes and Diabetes observations. For MLP, the higher concentration around 25–30% is more promising in isolation, but the earlier calibration analysis demonstrated that even this range is characterised by wide uncertainty and unstable boundaries. Lowering thresholds to these levels would therefore generate substantial misclassification of the majority classes, trading a marginal gain in Prediabetes recall for a large increase in false positives across the other two categories.
 
-**6.5.3 Empirical Threshold Analysis and Separability Conclusion**
+### 6.5.3 Empirical Threshold Analysis and Separability Conclusion
 
 To confirm this, empirical threshold optimisation via precision-recall F1 maximisation is applied to each model. The results are unambiguous.
 
@@ -883,11 +986,88 @@ bind_rows(
 
 ```
 
-Precision values remain below 5% across all five models at their respective optimal thresholds. For every true Prediabetes case correctly identified, approximately 20 non-Prediabetes observations would be misclassified as Prediabetes. No operationally useful classification boundary exists within the observable probability range for any model, and threshold adjustment is therefore not pursued further.
+Precision values remain below 5% across all five models at their respective optimal thresholds. For every true Prediabetes case correctly identified, approximately 20 non-Prediabetes observations would be misclassified as Prediabetes. No operationally useful classification boundary exists within the observable probability range for any model, and threshold adjustment is implemented in Section 6.5.4 to quantify the precision-recall tradeoff explicitly.
 
 Taken together, the calibration plots, probability distributions, and threshold analysis converge on a single conclusion. Prediabetes represents a structurally near-inseparable class in this feature space at population prevalence. Its clinical profile overlaps substantially with both adjacent categories, and the available self-reported survey predictors lack the granularity required to isolate the transitionary prediabetic phenotype at the decision boundary. This is consistent with broader evidence that prediabetes detection from survey-level data remains a fundamental challenge even under optimal modelling conditions, and points toward the need for continuous biomarker data such as HbA1c or fasting glucose to achieve clinically meaningful Prediabetes classification.
 
-## 6.5 Model Interpretation
+### 6.5.4 Adjusted Class-wise Performance
+
+```{r}
+#| label: rq1-adjusted-heatmap-prep
+#| include: false
+
+thresholds_vec <- c(
+  "XGBoost"       = 0.0643,
+  "Random Forest" = 0.0696,
+  "Multinomial"   = 0.1058,
+  "Elastic Net"   = 0.1028,
+  "MLP"           = 0.2615)
+
+pred_adjusted <- pred_all |>
+  mutate(.pred_class_adj = factor(
+    ifelse(.pred_Prediabetes > thresholds_vec[model],
+           "Prediabetes",
+           as.character(.pred_class)),
+    levels = c("No diabetes", "Prediabetes", "Diabetes")))
+
+classwise_adj <- pred_adjusted |>
+  group_by(model) |>
+  summarise(
+    precision_no   = precision_vec(Diabetes, .pred_class_adj, event_level = "first"),
+    recall_no      = recall_vec(Diabetes, .pred_class_adj, event_level = "first"),
+    precision_pre  = precision_vec(make_binary(Diabetes, "Prediabetes"),
+                                   make_binary(.pred_class_adj, "Prediabetes")),
+    recall_pre     = recall_vec(make_binary(Diabetes, "Prediabetes"),
+                                make_binary(.pred_class_adj, "Prediabetes")),
+    precision_diab = precision_vec(make_binary(Diabetes, "Diabetes"),
+                                   make_binary(.pred_class_adj, "Diabetes")),
+    recall_diab    = recall_vec(make_binary(Diabetes, "Diabetes"),
+                                make_binary(.pred_class_adj, "Diabetes"))
+  ) |>
+  pivot_longer(
+    cols      = -model,
+    names_to  = c("metric", "class"),
+    names_sep = "_",
+    values_to = "value"
+  ) |>
+  mutate(
+    class  = case_when(
+      class == "no"   ~ "No diabetes",
+      class == "pre"  ~ "Prediabetes",
+      class == "diab" ~ "Diabetes"),
+    metric = str_to_title(metric))
+```
+
+```{r}
+#| label: rq1-adjusted-heatmap
+
+classwise_adj |>
+  ggplot(aes(x = class, y = model, fill = value)) +
+  geom_tile(colour = "white", linewidth = 0.5) +
+  geom_text(aes(label = percent(value, accuracy = 0.1)),
+            size = 3, colour = "white") +
+  facet_wrap(~ metric) +
+  scale_fill_viridis_c(
+    option  = "D",
+    limits  = c(0, 1),
+    labels  = percent_format()) +
+  labs(
+    title = "Class-wise precision and recall by model — adjusted threshold",
+    x     = NULL,
+    y     = NULL,
+    fill  = "Score"
+  ) +
+  theme(
+    legend.position = "bottom")
+```
+
+Applying the empirically derived thresholds produces a clear and consistent tradeoff across all five models. Prediabetes recall improves meaningfully, reaching 22-39% across models compared to 0% at the default threshold, with Random Forest achieving the highest recovery at 38.8% and Elastic Net at 29.0%. However Prediabetes precision remains critically low at 3.4-4.3%, confirming the finding from Section 6.5.3 that for every true Prediabetes case identified, approximately 20-30 non-Prediabetes observations are misclassified alongside it.
+
+The cost of this recovery is substantial. Diabetes recall drops sharply across all models, falling from 44-50% at the default threshold to 23-43%, as many true Diabetes observations are reclassified into the newly expanded Prediabetes prediction region. No diabetes metrics remain broadly stable, reflecting its dominance in the test set.
+
+The adjusted heatmap confirms that no operationally useful threshold exists for Prediabetes classification in this feature space. Any meaningful gain in Prediabetes recall comes at the direct expense of Diabetes recall, trading one classification failure for another. This reinforces the separability conclusion in Section 6.5.3 and rules out threshold adjustment as a viable remediation strategy.
+
+## 6.6 Model Interpretation
 
 **Triangulation Strategy for Model Interpretation**
 
@@ -899,7 +1079,7 @@ To ensure robust identification of diabetes risk factors, **methodological trian
 
 **Convergence between methods** strengthens confidence that identified risk factors are robust across modelling assumptions. **Divergence** indicates non-linearities, interactions, or violations of parametric assumptions that only flexible models capture. Where findings conflict, consistency patterns are prioritized and discrepancies are noted as areas requiring further investigation.
 
-### 6.5.1 Log-Odds Ratios (Multinomial Logistic Regression)
+### 6.6.1 Log-Odds Ratios (Multinomial Logistic Regression)
 
 Multinomial logistic regression estimates the log-odds of belonging to each diabetes category relative to a reference category. In this analysis, **No diabetes** serves as the reference class.
 
@@ -908,7 +1088,6 @@ Positive coefficients indicate **higher odds of belonging to the specified diabe
 ```{r}
 #| label: rq1-logodds-prep
 #| include: false
-
 
 multinom_coefs <- multinom_final_fit |>
   extract_fit_parsnip() |>
@@ -919,108 +1098,105 @@ multinom_coefs_tidy <- multinom_coefs |>
   as.data.frame() |>
   rownames_to_column(var = "y.level") |>
   pivot_longer(
-    cols = -y.level, 
-    names_to = "term", 
+    cols      = -y.level,
+    names_to  = "term",
     values_to = "estimate"
+  ) |>
+  mutate(
+    odds_ratio = exp(estimate),
+    direction  = ifelse(odds_ratio > 1, "Increased risk", "Decreased risk")
   )
-
-multinom_coefs_tidy <- multinom_coefs_tidy |>
-  mutate(odds_ratio = exp(estimate))
 
 ```
 
 ```{r}
-#| label: ods-plot-rq1
-#| fig-height: 7
-#| fig-width: 14
+#| label: rq1-logodds-plot
+#| fig-height: 8
+#| fig-width: 16
+
+
 multinom_coefs_tidy |>
   filter(term != "(Intercept)") |>
-  ggplot(aes(x = odds_ratio, y = reorder(term, odds_ratio))) +
-  geom_point()  +
-  geom_vline(xintercept = 1, linetype = "dashed") +
+  ggplot(aes(
+    x    = odds_ratio,
+    y    = reorder(term, odds_ratio),
+    colour = direction)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 1, linetype = "dashed", colour = "grey40") +
   facet_wrap(~ y.level) +
+  scale_colour_manual(values = c(
+    "Increased risk" = "#E69F00",
+    "Decreased risk" = "#0072B2")) +
   labs(
-    x = "Odds Ratio",
-    y = "Predictor",
-    title = "Odds ratios for predictors of diabetes status"
-  )
+    x      = "Odds Ratio",
+    y      = "Predictor",
+    title  = "Odds ratios for predictors of diabetes status",
+    colour = NULL
+  ) +
+  theme(legend.position = "bottom")
 ```
 
 **Multinomial Logistic Regression: Odds Ratio (OR) Summary**
 
 *OR \> 1 indicates increased odds; OR \< 1 indicates decreased odds.*
 
-**Synthesis of Findings**
+-   **Primary drivers.** General health, BMI, and age are the three strongest positive predictors of Diabetes ($OR = 1.83$, $OR = 1.61$, $OR = 1.57$ respectively), with clinical metabolic markers close behind. High blood pressure yields a 47% increase in odds of Diabetes ($OR = 1.47$) and high cholesterol a 35% increase ($OR = 1.35$).
 
--   **Primary Drivers:** Clinical indicators (Hypertension, Hypercholesterolemia, and BMI) represent the most significant risk. High blood pressure, in particular, yields a **139% increase** in the odds of diabetes ($OR = 2.39$).
+-   **The BMI gradient.** BMI shows a clear disease progression pattern, with a stronger association for Diabetes ($OR = 1.61$) than Prediabetes ($OR = 1.44$), confirming its role as a marker of disease advancement rather than uniform transitional risk.
 
--   **The BMI Gradient:** The data shows a clear progression where BMI impacts diabetes ($OR = 1.72$) more severely than prediabetes ($OR = 1.51$), confirming its role in disease advancement.
+-   **Behavioural mediation.** Physical activity, fruit consumption, and vegetable consumption all show near-null effects ($OR \approx 0.98$ across both classes), consistent with full mediation through metabolic intermediates such as BMI and blood pressure.
 
--   **Behavioral Mediation:** The lack of independent effect for physical activity ($OR = 1.00$) suggests its impact is likely **fully mediated** by metabolic variables like BMI and blood pressure.
+-   **Healthcare access.** NoDocbcCost shows a stronger association with Prediabetes ($OR = 1.11$) than Diabetes ($OR = 1.00$), suggesting cost barriers to care are more strongly linked to the undiagnosed transitionary state than to established diabetes.
 
--   **Statistical Anomalies:** The negative association with heavy alcohol ($OR = 0.31$) likely reflects **selection bias** (e.g., "sick quitters" or health-conscious adjustments after diagnosis) rather than a biological protective effect.
+-   **Statistical anomalies.** Heavy alcohol consumption shows a negative association ($OR = 0.85$ for Diabetes, $OR = 0.96$ for Prediabetes), almost certainly reflecting selection bias from sick quitter effects or post-diagnosis behavioural adjustment rather than a genuine protective mechanism.
 
 **Conclusion**
 
 Diabetes status in this population is best characterized by a **multifactorial cardiometabolic profile**. While age and sex are relevant, clinical markers of obesity and metabolic syndrome remain the most effective predictors for distinguishing between healthy, prediabetic, and diabetic individuals.
 
-### 6.5.2 Global SHAP importance
+### 6.6.2 Elastic Net Coefficient Path
 
-**SHAP Interpretation Methodology**
-
-To complement the parametric log-odds interpretation, we employ **SHAP (SHapley Additive exPlanations)** to quantify feature contributions in the XGBoost model. SHAP offers several advantages:
-
--   **Model-agnostic foundation** grounded in game theory, enabling comparison across model types
--   **TreeSHAP algorithm** provides exact Shapley values by leveraging XGBoost tree structure (no Monte Carlo approximation needed)
--   **Multiclass compatibility** computes separate contributions for each diabetes category (No diabetes, Prediabetes, Diabetes)
--   **Mean absolute SHAP values** reveal global feature importance by measuring how much each feature, on average, shifts predicted probabilities from baseline
-
-By comparing SHAP importance with logistic regression odds ratios, we assess method convergence—agreement strengthens confidence in identified risk factors, while discrepancies highlight non-linearities the parametric model cannot capture.
+The optimal elastic net configuration converged to pure ridge regularisation (mixture = 0.0, as established in section 6.4), applying continuous shrinkage to all predictor coefficients toward zero without eliminating any predictor entirely. Unlike lasso, ridge retains the full feature set, meaning coefficient magnitude reflects relative predictive contribution under regularisation pressure rather than binary inclusion or exclusion. This provides a useful complement to the multinomial log-odds, revealing how the full predictor set is weighted when multicollinearity and overfitting are penalised simultaneously.
 
 ```{r}
-#| label: shapviz-rq1
-
-xgb_engine <- extract_fit_engine(xgb_final_fit)
-
-test_processed <- bake(
-  prep(extract_preprocessor(xgb_final_wf)),
-  new_data = diab_test
-)
-
-X <- test_processed |>
-  select(-Diabetes) |>
-  as.matrix()
-
-set.seed(123)
-X_sample <- X[sample(nrow(X), 10000), ]
-
-# shp <- shapviz(xgb_engine, X_pred = X_sample)
-# write_rds(shp, "shp_rq1.rds")
-
-# Load precomputed SHAP values to avoid recomputing expensive shapviz calculations
-shp <- read_rds("shp_rq1.rds")
-
-
-```
-
-```{r}
-#| label: global-shp-rq1
+#| label: rq1-ridge-coefs
 #| message: false
 #| warning: false
-#| fig-height: 7
-#| fig-width: 14
-sv_importance(shp, kind = "bar") +
-  scale_fill_discrete(
-    labels = c(
-      "No diabetes",
-      "Prediabetes",
-      "Diabetes")
-  )
+
+glmnet_coefs <- glmnet_final_fit |>
+  extract_fit_parsnip() |>
+  tidy() |>
+  filter(term != "(Intercept)", estimate != 0) |>
+  mutate(direction = ifelse(estimate > 0, "Retained positive", "Retained negative"))
+
+glmnet_coefs |>
+  ggplot(aes(x = estimate, y = reorder(term, estimate), fill = direction)) +
+  geom_col(alpha = 0.8) +
+  facet_wrap(~ class) +
+  scale_fill_manual(values = c("Retained positive" = "#E69F00", "Retained negative" = "#0072B2")) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey20") +
+  labs(
+    title = "Elastic Net retained predictors by outcome class",
+    subtitle = "Pure Ridge (mixture = 0). Zero-coefficient predictors excluded.",
+    x    = "Coefficient estimate",
+    y    = "Predictor",
+    fill = NULL
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
 ```
 
-> The SHAP importance plot indicates that cardiometabolic indicators dominate the predictive structure of the model. High blood pressure, general health status, high cholesterol, and BMI exhibit the largest mean absolute SHAP contributions across classes, indicating they play the strongest role in shifting predicted probabilities of diabetes status. Age also contributes meaningfully, while behavioural variables such as smoking, fruit consumption, and alcohol use show comparatively smaller effects. This pattern closely mirrors the multinomial logistic regression results, reinforcing the conclusion that diabetes status in this dataset is primarily driven by metabolic and health status indicators rather than lifestyle variables alone.
+The coefficient directions are broadly consistent with the multinomial log-odds in Section 6.6.1, providing cross-method validation of the core risk structure.
 
-### 6.5.3 Variable Importance
+**GenHlth and BMI** are the two strongest retained predictors for Diabetes with the largest positive coefficients, confirming their dominance established in the multinomial analysis. Age and HighBP follow closely, consistent with the cardiometabolic risk profile identified earlier.
+
+**No diabetes coefficients** are largely mirror images of the Diabetes coefficients, with GenHlth, Age, and BMI showing the strongest negative estimates, reflecting that the same predictors driving diabetes risk simultaneously reduce the probability of being classified as healthy.
+
+**Prediabetes coefficients** are notably attenuated relative to both other classes, with HighChol and NoDocbcCost showing the largest retained effects. The attenuation is consistent with the near-inseparability finding in Section 6.5, as ridge assigns minimal weight to a class it cannot reliably distinguish even when all predictors are retained.
+
+**HvyAlcoholConsump** shows a negative coefficient for Diabetes and near-zero for Prediabetes, consistent with the selection bias interpretation raised in Section 6.6.1 rather than a genuine protective effect.
+
+### 6.6.3 Variable Importance
 
 **Variable Importance: Gain Metric**
 
@@ -1042,33 +1218,143 @@ xgb_final_fit |>
       geom = "col",
       aesthetics = list(fill = "steelblue",color = 'black', alpha = 0.8)) +
   labs(title = "Variable Importance: XGBoost Model",
-       subtitle = "Top 15 predictors based on gain")
+       subtitle = "Top 15 predictors based on gain") 
+```
+
+**GenHlth and HighBP** dominate the importance ranking, accounting for the two largest gain values by a substantial margin. Their prominence here, unlike in the multinomial where GenHlth led but HighBP ranked fourth, suggests that XGBoost is exploiting non-linear interactions between blood pressure and other metabolic markers that the parametric models cannot capture.
+
+**Age and BMI** rank third and fourth respectively, consistent across all three interpretation methods, confirming these as the most stable and robust predictors of diabetes status regardless of modelling assumptions.
+
+**Income** enters the top five in the XGBoost ranking, a stronger signal than its position in the multinomial log-odds suggested. This is consistent with XGBoost capturing SES-mediated pathways through interactions with healthcare access, diet, and physical health variables that linear models partially suppress.
+
+**HighChol** ranks sixth, lower relative to its multinomial prominence, suggesting its independent contribution is partially absorbed by correlated predictors such as HighBP and BMI in the tree-splitting process.
+
+**Behavioural predictors** including smoking, fruit consumption, and heavy alcohol consumption cluster at the bottom of the ranking, consistent with the near-null effects observed in the multinomial analysis and confirming that their association with diabetes status is largely mediated rather than independent.
+
+### 6.6.4 SHAP Importance
+
+**SHAP Interpretation Methodology**
+
+To complement the parametric log-odds interpretation, we employ **SHAP (SHapley Additive exPlanations)** to quantify feature contributions in the XGBoost model. SHAP offers several advantages:
+
+-   **Model-agnostic foundation** grounded in game theory, enabling comparison across model types
+-   **TreeSHAP algorithm** provides exact Shapley values by leveraging XGBoost tree structure (no Monte Carlo approximation needed)
+-   **Multiclass compatibility** computes separate contributions for each diabetes category (No diabetes, Prediabetes, Diabetes)
+-   **Mean absolute SHAP values** reveal global feature importance by measuring how much each feature, on average, shifts predicted probabilities from baseline
+
+By comparing SHAP importance with logistic regression odds ratios, we assess method convergence, agreement strengthens confidence in identified risk factors, while discrepancies highlight non-linearities the parametric model cannot capture.
+
+```{r}
+#| label: shapviz-rq1
+
+# xgb_engine <- extract_fit_engine(xgb_final_fit)
+# 
+# test_processed <- bake(
+#   prep(extract_preprocessor(xgb_final_wf)),
+#   new_data = diab_test
+# )
+# 
+# X <- test_processed |>
+#   select(-Diabetes,-weight) |>
+#   as.matrix()
+# 
+# set.seed(42)
+# X_sample <- X[sample(nrow(X), 10000), ]
+# 
+# shp <- shapviz(xgb_engine, X_pred = X_sample)
+# write_rds(shp, "shp_rq1.rds")
+
+# Load precomputed SHAP values to avoid recomputing expensive shapviz calculations
+shp <- read_rds("shp_rq1.rds")
+
 
 ```
 
--   **Consistency with Statistical Findings:** The VIP confirms the results from the multinomial log-odds analysis (Section 6.5.1), with **HighBP**, **BMI**, and **HighChol** consistently appearing as the most influential predictors. This triangulation of methods strengthens the argument that these clinical markers are the primary determinants of diabetes risk in this dataset.
+#### Shap Global Importance
 
--   **The "Prediabetes" Paradox:** Despite the high importance scores for these top features, the model's struggle to classify the "Prediabetes" class suggests a "ceiling effect." While variables like **HighBP** and **GenHlth** (General Health) are excellent at distinguishing between "Healthy" and "Diabetic" individuals, the feature space lacks the specific granularity required to isolate the transitionary prediabetic phase.
+```{r}
+#| label: global-shp-rq1
+#| message: false
+#| warning: false
+#| fig-height: 7
+#| fig-width: 14
+sv_importance(shp, kind = "bar") +
+  scale_fill_discrete(
+    labels = c(
+      "No diabetes",
+      "Prediabetes",
+      "Diabetes")) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
 
--   **Lifestyle vs. Clinical Markers:** Interestingly, clinical markers (BMI, Blood Pressure) rank significantly higher than lifestyle factors such as **PhysActivity** or **Fruits**. This implies that while lifestyle choices contribute to the outcome, the physiological manifestations (the "clinical profile") are the more immediate and powerful predictors for the gradient-boosted trees.
+> **GenHlth** is the dominant predictor for Diabetes (red, $\approx 0.35$) by a substantial margin, with considerably smaller contributions for No diabetes and Prediabetes. This asymmetry suggests GenHlth is particularly informative for distinguishing established diabetes from the healthy state, consistent with the multinomial log-odds finding.
+>
+> **Age and BMI** show high and broadly distributed SHAP values across all three classes, confirming their role as general-purpose discriminators rather than class-specific signals. BMI shows notably higher No diabetes contribution (blue) than the other classes, suggesting it is particularly informative for ruling out diabetes.
+>
+> **HighBP** shows a striking class asymmetry, with a very large Diabetes SHAP value (red, $\approx 0.23$) relative to its Prediabetes contribution (green $\approx 0.02$), reinforcing the dose-response pattern identified in Section 6.6.1 and confirming that hypertension is a stronger signal for established diabetes than transitional risk.
+>
+> **Income and HighChol** both show meaningful Prediabetes contributions (green) relative to their class size, consistent with the lasso finding in Section 6.6.2 where these predictors were among the few retained with non-trivial Prediabetes coefficients.
+>
+> **Behavioural predictors** including smoking, heavy alcohol consumption, and NoDocbcCost cluster at the bottom of the ranking across all classes, confirming the mediation interpretation established across all three methods.
 
-## 6.6 Conclusion: Model Interpretability and Determinants
+#### **Shap Beeswarm**
 
-The comprehensive analysis of diabetes status, conducted through both statistical and machine learning frameworks, demonstrates that diabetes risk in this population is best characterized by a multifactorial cardiometabolic profile. By triangulating the results from multinomial log-odds, XGBoost Variable Importance, and SHAP values, this study provides a robust validation of the primary drivers of the disease.
+The beeswarm plots decompose SHAP contributions at the individual observation level, with colour indicating feature value (orange = high, purple = low) and horizontal position indicating the direction and magnitude of contribution to each class prediction.
 
--   **Triangulation of Risk Factors:** There is a clear consensus across all analytical methods regarding the primary determinants of health. The multinomial logistic regression identified **High Blood Pressure** as the strongest categorical predictor, with an associated 139% increase in the odds of a diabetes diagnosis ($OR = 2.39$). This finding is directly mirrored in the **XGBoost Variable Importance Plot (VIP)**, where HighBP ranks as a top-tier feature, and is further clarified by the **SHAP summary plot**, which illustrates how high values for blood pressure, BMI, and cholesterol consistently push the model’s prediction toward the diabetic class.
+```{r}
+#| label: beeswarm-shp-rq1
+#| message: false
+#| warning: false
+#| fig-height: 8
+#| fig-width: 18
+#| dev: "ragg_png"
+#| dpi: 180
 
--   **Predictive Nonlinearity and Impact:** While the linear multinomial model provides clear odds ratios, the SHAP analysis reveals the nuanced, non-linear impacts of features such as **Age** and **General Health**. The SHAP distribution reveals a significant clustering of high-risk impact for older age groups, suggesting that risk does not simply increase linearly, but rather accelerates as multiple clinical markers, such as BMI and cholesterol, coincide.
+names(shp) <- c("No diabetes", "Prediabetes", "Diabetes")
 
--   **The "Prediabetes" Gap and Structural Challenges:** A critical finding of this synthesis is the discrepancy in class identification across models. While the machine learning models (XGBoost and Random Forest) performed competitively in overall discrimination, they effectively collapsed the classification into a binary task, failing to isolate the **Prediabetes** class. The SHAP values show a significant overlap in the middle of the feature distribution, explaining this struggle, the clinical signature of prediabetes in this dataset is too similar to the surrounding classes for the boosting algorithm to partition effectively. Conversely, the multinomial logistic regression demonstrated superior balance, maintaining the ability to distinguish the subtle physiological transitions inherent in the intermediate prediabetic category.
+sv_importance(shp, kind = "beeswarm")
+```
 
--   **Socioeconomic and Actionable Clinical Profiles:** Beyond clinical indicators, general health perception and age remained significant predictors, yet lifestyle factors, such as physical activity and diet, showed weaker direct associations than physiological manifestations. This implies that while lifestyle choices are foundational, they may operate indirectly through their impact on measurable markers like BMI and blood pressure. The synthesis confirms that a high-risk profile is defined by the intersection of these clinical markers, which consistently dominate the top of both the VIP and SHAP rankings, identifying them as the most critical targets for screening and preventative intervention.
+**No diabetes** is dominated by GenHlth and BMI, with high feature values (orange) pushing strongly positive, meaning poor general health and high BMI paradoxically increase No diabetes SHAP values here, which reflects the reference class encoding rather than a biological effect. Age shows the widest spread, with high age values pushing strongly rightward toward positive SHAP, consistent with older individuals being more likely to have received a formal diagnosis.
 
-|  |  |  |
-|------------------------|------------------------|------------------------|
-| **Method** | **Key Strength** | **Primary Top Predictors** |
-| **Multinomial Logistic** | Identifies the "Prediabetes" gradient | HighBP, BMI, Age |
-| **XGBoost VIP (Gain)** | Highlights overall model efficiency | HighBP, GenHlth, BMI |
-| **SHAP Analysis** | Shows direction and impact of features | HighBP, BMI, HighChol |
+**Prediabetes** is notably distinct. Age dominates with the largest spread, and high age values push positively toward Prediabetes classification. Income, HighChol, and NoDocbcCost show meaningful contributions, consistent with the lasso and bar plot findings. The compressed scale and narrow distributions reflect the near-inseparability documented in Section 6.5.
 
-In summary, the triangulation of results from the **Odds Ratios**, **SHAP values**, and **XGBoost Variable Importance** provides a robust validation of the cardiometabolic risk factors. For clinical application, the multinomial model remains the most "fit-for-purpose" tool due to its unique capacity to identify individuals in the critical prediabetic phase.
+**Diabetes** mirrors No diabetes in structure but with reversed directionality. GenHlth and HighBP show the largest positive contributions from high feature values, with Age and BMI following. HvyAlcoholConsump shows a distinctive rightward orange cluster, consistent with the selection bias artefact identified across all three interpretation methods.
+
+### 6.6.5 Model Interpretability and Determinants
+
+The triangulation of results across multinomial log-odds, elastic net coefficients, XGBoost variable importance, and SHAP values provides robust cross-method validation of the primary determinants of diabetes status in this population.
+
+**Consensus risk factors.** All four interpretation methods converge on a consistent cardiometabolic risk profile. GenHlth, Age, BMI, HighBP, and HighChol rank in the top five predictors across every method, confirming these as the most stable and reliable discriminators of diabetes status regardless of modelling assumptions.
+
+**Dose-response and non-linearity.** The multinomial log-odds establish clear directional effects, with GenHlth ($OR = 1.83$), BMI ($OR = 1.61$), and Age ($OR = 1.57$) as the strongest positive predictors of Diabetes. The SHAP beeswarm extends this by revealing non-linear acceleration, high Age values produce disproportionately large positive contributions, suggesting that risk amplifies when multiple clinical markers coincide rather than accumulating linearly.
+
+**The Prediabetes gap.** Across all methods, Prediabetes coefficients and SHAP values are consistently attenuated relative to both adjacent classes. The lasso assigns minimal weight to Prediabetes predictors, SHAP distributions for the Prediabetes class are compressed and narrow, and the threshold analysis in Section 6.5 confirmed structural near-inseparability. This convergent evidence points to a fundamental limitation of survey-level features rather than a modelling failure.
+
+**Behavioural mediation.** Physical activity, fruit consumption, and vegetable consumption show near-null effects across all methods ($OR \approx 0.98$, negligible SHAP contributions, bottom-ranked in VIP), consistent with full mediation through metabolic intermediates such as BMI and blood pressure rather than direct independent effects.
+
+**Socioeconomic signal.** Income and Education show meaningful contributions in the XGBoost VIP and SHAP rankings despite modest multinomial log-odds, suggesting non-linear SES pathways that the parametric model partially suppresses.
+
+| Method | Key Strength | Top Predictors |
+|----|----|----|
+| **Multinomial Log-Odds** | Directional parametric interpretation | GenHlth, BMI, Age |
+| **Elastic Net** | Feature selection under regularisation | GenHlth, BMI, Age |
+| **XGBoost VIP** | Non-linear predictive utility | GenHlth, HighBP, Age |
+| **SHAP** | Direction, magnitude, and heterogeneity | GenHlth, Age, BMI |
+
+## 6.7 Conclusion
+
+> This research question asked the extent to which diabetes status can be explained and predicted from demographic, socioeconomic, behavioural, and cardiometabolic factors, and which predictors most strongly distinguish between the three outcome classes.
+
+**Predictive performance:** Five models spanning parametric, regularised, tree-based, ensemble, and neural network approaches achieved macro-weighted ROC-AUC of approximately 0.82 across all candidates, with XGBoost marginally leading ($AUC = 0.822$). This level of discrimination reflects genuine probabilistic signal in the feature set, though class-wise evaluation tempers this finding: Diabetes recall ranges from 44--50% at the default threshold, meaning roughly half of true Diabetes cases are misclassified, and Prediabetes precision and recall collapse entirely to zero across four of five models. The ROC-AUC figure therefore reflects ranking ability rather than operational classification performance, and should be interpreted alongside the confusion matrices and class-wise heatmaps in Sections 6.4.2 and 6.4.3.
+
+**Primary determinants:** Cardiometabolic factors dominate prediction across all methods. General health perception, BMI, age, high blood pressure, and high cholesterol consistently rank as the five strongest predictors regardless of modelling framework, confirming a robust multifactorial cardiometabolic risk profile. Demographic factors, particularly age and sex, contribute meaningfully but are secondary to clinical metabolic markers.
+
+**Socioeconomic factors:** Income and education show non-linear SES-mediated pathways captured most clearly by XGBoost and SHAP, suggesting their effect on diabetes risk operates indirectly through metabolic intermediates rather than as direct independent predictors. This is consistent with the near-null multinomial log-odds for these variables relative to their VIP and SHAP prominence.
+
+**Behavioural factors:** Physical activity, diet, and smoking show negligible independent predictive contributions across all methods, consistent with full mediation through BMI and blood pressure. Behavioural factors appear foundational but not directly discriminating at the survey measurement level available in this dataset.
+
+**The Prediabetes limitation:** A critical finding is that no model could reliably distinguish Prediabetes from adjacent classes at population prevalence, despite strong overall discrimination. Threshold analysis, calibration plots, and SHAP distributions converge on a single explanation: the clinical signature of prediabetes in self-reported survey data overlaps substantially with both healthy and diabetic profiles, and the available predictors lack the granularity to isolate the transitionary phenotype. This points toward the need for continuous biomarker data such as HbA1c or fasting glucose to achieve clinically meaningful three-class separation.
+
+**Overall answer:** Diabetes status is meaningfully explainable and predictable from the available feature set for the binary distinction between diabetes and no diabetes, with cardiometabolic markers providing the strongest and most consistent signal across all analytical frameworks. Discrimination is robust at the probability level, with macro-weighted ROC-AUC of 0.82 confirmed across all five models, though class-wise evaluation reveals that roughly half of true Diabetes cases are misclassified at the default threshold, tempering the strength of this claim. The three-class problem remains structurally constrained by the near-inseparability of prediabetes at population prevalence, a finding corroborated independently by calibration analysis, probability distributions, empirical threshold optimisation, and adjusted class-wise evaluation, representing both a limitation of the current analysis and a clinically important finding in its own right.
